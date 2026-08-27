@@ -93,7 +93,12 @@ function renderAll() {
  *  unregisters the old tools — there is no unregisterTool in the spec. */
 async function syncPhaseTools() {
   if (phaseTools.controller) phaseTools.controller.abort();
-  phaseTools = await registerPhaseTools(room, round, room.phase, { onCall: recordToolCall });
+  phaseTools = await registerPhaseTools(room, round, room.phase, {
+    onCall: recordToolCall,
+    // A tool that moves the room itself (ratify closes the round) needs the
+    // surface re-synced and the views redrawn WITHOUT recording another act.
+    onChange: async () => { await syncPhaseTools(); renderAll(); },
+  });
   renderTools();
 }
 

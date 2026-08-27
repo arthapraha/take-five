@@ -148,6 +148,7 @@ export async function registerReadSurface(room, opts) {
 // because it is not registered.
 
 import { commitmentFor, freshNonce, checkReveal } from './round.js';
+import { confirmWithHuman } from './confirm.js';
 
 /** The synthetic partner. A distinct origin, so `exposedTo` is exercised
  *  across an actual origin boundary rather than same-origin against ourselves.
@@ -255,15 +256,90 @@ async function verifyReveal({ commitment, value, nonce }) {
   };
 }
 
+function ratifyTool(room, round, announce, onChange) {
+  return {
+    name: 'ratify_ruling',
+    title: 'Ratify the ruling',
+    description: 'Ask the room host to ratify the ruling and close the round. This tool cannot ratify: it raises a request, and a human must confirm. The confirmation is recorded with the act.',
+    inputSchema: {
+      type: 'object',
+      properties: { ruling: { type: 'string', description: 'The ruling to put to the host.' } },
+      required: ['ruling'],
+    },
+    // Deliberately NOT readOnlyHint. This is the one irreversible act in the
+    // room, and it should trip every confirmation harness that reads the hint.
+    annotations: { readOnlyHint: false, destructiveHint: true },
+    execute: async ({ ruling } = {}) => {
+      if (room.phase !== 'Ruling') return text(`Not in Ruling — the room is in ${room.phase}. Nothing was recorded.`);
+      const proposed = String(ruling ?? '').trim();
+      if (!proposed) return text('A ruling is required. Nothing was recorded.');
+
+      // The ASK is the agent's act, through the agent's door.
+      const request = await room.record({
+        kind: 'ratification_requested',
+        payload: { ruling: proposed },
+        seatId: 'rider',
+        ingress: 'webmcp',
+      });
+      announce('ratify_ruling');
+
+      const outcome = await confirmWithHuman({
+        title: 'Ratify this ruling?',
+        detail: proposed,
+      });
+
+      // The ANSWER is the human's act, through the human's door. Two entries,
+      // because two different parties did two different things — collapsing
+      // them into one would attribute the human's decision to the agent that
+      // asked for it.
+      const entry = await room.record({
+        kind: outcome.confirmed ? 'ruling_ratified' : 'ratification_declined',
+        payload: {
+          ruling: proposed,
+          requested_by: request.hash,
+          confirmation: { method: outcome.method, note: outcome.note },
+        },
+        seatId: 'host',
+        ingress: 'ui',
+      });
+
+      if (outcome.confirmed) {
+        room.ruling = proposed;
+        await room.advance('Closed');
+        // Re-sync ONLY on a confirmed ratification, and only on a MACROTASK.
+        //
+        // Re-syncing aborts the controller that owns this very tool. A
+        // microtask runs before the executeTool promise settles, so the caller
+        // gets `UnknownError: Tool unregistered` instead of its result — the
+        // ratification succeeds, the room closes, and the agent is told the
+        // tool vanished. `setTimeout(…, 0)` runs after the promise chain, so
+        // the reply is delivered first and the surface updates immediately
+        // after. A decline changes no phase and needs no re-sync at all.
+        setTimeout(() => { if (onChange) onChange(); }, 0);
+      }
+
+      return text(
+        `${outcome.confirmed ? 'RATIFIED' : 'DECLINED'} — by the host, not by you.\n` +
+        `ruling: ${proposed}\n` +
+        `request entry #${request.seq} (agent, via webmcp)\n` +
+        `decision entry #${entry.seq} (host, via ui)\n` +
+        `confirmed by: ${outcome.method} — ${outcome.note}\n` +
+        (outcome.confirmed ? 'The round is Closed.' : 'The round remains in Ruling.'),
+      );
+    },
+  };
+}
+
 const PHASE_TOOLS = {
   Commit: [commitTool],
   Reveal: [revealTool],
+  Ruling: [ratifyTool],
 };
 
 /** Register the tools for a phase and return the controller that unregisters
  *  them. Aborting is the ONLY way they come off — there is no unregisterTool in
  *  the spec any more. */
-export async function registerPhaseTools(room, round, phase, { onCall } = {}) {
+export async function registerPhaseTools(room, round, phase, { onCall, onChange } = {}) {
   const builders = PHASE_TOOLS[phase] ?? [];
   const mc = document.modelContext;
   if (!mc || !builders.length) return { controller: null, names: [] };
@@ -271,7 +347,7 @@ export async function registerPhaseTools(room, round, phase, { onCall } = {}) {
   const announce = (n) => { if (onCall) onCall(n); };
   const names = [];
   for (const build of builders) {
-    const tool = build(room, round, announce);
+    const tool = build(room, round, announce, onChange);
     // NO `exposedTo` here. It is an ALLOWLIST: naming only the partner origin
     // would expose the tool to the partner and hide it from the agent riding
     // this page — the opposite of what a phase tool is for.
