@@ -86,18 +86,22 @@ export class Room {
   }
 }
 
-/** A seeded room with a round already played, so an unaccompanied visitor sees
- *  a real chain rather than an empty one. Every entry here is genuinely
- *  appended and genuinely hashed — the seeding is real history, not fixtures
- *  pretending to be history. */
+export const QUESTION = 'Should the room adopt the proposal as drafted?\n';
+
+/** A per-visitor sandbox room, seeded with real history and left in Commit so
+ *  an unaccompanied visitor can walk the rest of the flow themselves.
+ *
+ *  This is mapping v2 §1a's first shape: the visitor's own seat holds the host
+ *  role, which is consistent because host-is-a-role. A judge who opens the live
+ *  URL is not a spectator in someone else's room — they are the host of theirs,
+ *  and every phase verb is available to them without any act from us.
+ *
+ *  The seeding is genuine: each entry below is appended and hashed exactly like
+ *  any other. Nothing here is a fixture wearing the costume of history. */
 export async function seedRoom(hostName) {
   const room = new Room({ hostName });
   await room.record({ kind: 'room_opened', payload: { name: 'Take Five' }, seatId: 'room', ingress: 'room' });
-  await room.addArtefact('question.md', 'Should the room adopt the proposal as drafted?\n');
+  await room.addArtefact('question.md', QUESTION);
   await room.advance('Commit');
-  await room.record({ kind: 'commit', payload: { seat: 'Room host', digest: 'sealed' }, seatId: 'host', ingress: 'ui' });
-  await room.record({ kind: 'commit', payload: { seat: 'Riding agent', digest: 'sealed' }, seatId: 'rider', ingress: 'webmcp' });
-  await room.record({ kind: 'commit', payload: { seat: 'Claude Code', digest: 'sealed' }, seatId: 'mcp-seat', ingress: 'mcp' });
-  await room.advance('Reveal');
   return room;
 }

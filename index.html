@@ -10,7 +10,10 @@
     <header>
       <h1>Take Five</h1>
       <p class="tagline">A governed room for humans and agents. Five phases, one chain, honest attribution.</p>
-      <div id="agent-status" class="status" data-state="checking">checking for an agent…</div>
+      <div class="statuses">
+        <span id="agent-status" class="status" data-state="checking">checking for an agent…</span>
+        <span id="crossorg" class="status" data-state="checking">checking cross-origin…</span>
+      </div>
     </header>
 
     <main>
@@ -18,6 +21,13 @@
         <h2 id="room-h">The room</h2>
 
         <ol id="phases" class="phases" aria-label="Phase"></ol>
+        <button id="advance" type="button" class="advance" hidden></button>
+
+        <h3>The question</h3>
+        <p id="question" class="question"></p>
+
+        <h3>Tools the agent can see now</h3>
+        <ul id="tools" class="tools"></ul>
 
         <h3>Seats</h3>
         <ul id="seats" class="seats"></ul>

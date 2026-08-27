@@ -1,5 +1,7 @@
-// Wiring: seed the room, register the read surface, render both views, and
-// re-render whenever a tool call lands so a watcher can see the agent working.
+// Wiring: seed the room, register the read surface, register the tools that
+// belong to the current phase, and re-render both views whenever anything
+// lands. The phase machine is driven by the host seat — which, in a per-visitor
+// sandbox, is whoever opened the page.
 
 // The polyfill does NOT install itself on import — only its IIFE build has side
 // effects, and the ESM entry exports an explicit initializer. Importing it bare
@@ -9,19 +11,21 @@
 // It never replaces a real implementation: in a browser that ships WebMCP, the
 // native `document.modelContext` wins and this is a no-op.
 import { initializeWebMCPPolyfill } from '@mcp-b/webmcp-polyfill';
-import { seedRoom, PHASES, INGRESS, GRADE_NOTE } from './room.js';
-import { registerReadSurface } from './tools.js';
+import { seedRoom, PHASES, INGRESS, GRADE_NOTE, QUESTION } from './room.js';
+import { registerReadSurface, registerPhaseTools, registerPartnerSurface } from './tools.js';
+import { Round } from './round.js';
 
 initializeWebMCPPolyfill();
 
 const $ = (id) => document.getElementById(id);
 const short = (h) => `${h.slice(0, 10)}…${h.slice(-6)}`;
 
-// The host seat's name is a placeholder filled at load. A visiting judge is the
-// host of their own session, so nobody's name is baked into the demo.
+// "Room host" is a placeholder filled at load, never a hardcoded person.
 const room = await seedRoom('Room host');
+const round = new Round(QUESTION.trim());
 
 let freshHash = null;
+let phaseTools = { controller: null, names: [] };
 
 function renderPhases() {
   const i = PHASES.indexOf(room.phase);
@@ -30,6 +34,15 @@ function renderPhases() {
     const cur = p === room.phase ? ' aria-current="true"' : '';
     return `<li${cls}${cur}>${p}</li>`;
   }).join('');
+
+  const next = PHASES[i + 1];
+  const btn = $('advance');
+  if (next) {
+    btn.hidden = false;
+    btn.textContent = `Advance to ${next}`;
+  } else {
+    btn.hidden = true;
+  }
 }
 
 function renderSeats() {
@@ -43,6 +56,15 @@ function renderGrades() {
   $('grades').innerHTML = Object.entries(GRADE_NOTE).map(
     ([g, note]) => `<dt class="grade grade-${g}">${g}</dt><dd>${note}</dd>`,
   ).join('');
+}
+
+function renderTools() {
+  const read = ['list_seats', 'current_phase', 'read_ledger', 'get_artefact', 'verify_receipt'];
+  const scoped = phaseTools.names;
+  $('tools').innerHTML =
+    read.map((n) => `<li class="tool read">${n}</li>`).join('') +
+    scoped.map((n) => `<li class="tool scoped">${n}</li>`).join('') +
+    (scoped.length ? '' : '<li class="tool none">no write tools in this phase</li>');
 }
 
 function renderLedger() {
@@ -63,7 +85,29 @@ function renderAll() {
   renderPhases();
   renderSeats();
   renderGrades();
+  renderTools();
   renderLedger();
+}
+
+/** Swap the phase-scoped surface. Aborting the previous controller is what
+ *  unregisters the old tools — there is no unregisterTool in the spec. */
+async function syncPhaseTools() {
+  if (phaseTools.controller) phaseTools.controller.abort();
+  phaseTools = await registerPhaseTools(room, round, room.phase, { onCall: recordToolCall });
+  renderTools();
+}
+
+async function recordToolCall(name) {
+  // A tool call is itself an act, recorded like any other — through the WebMCP
+  // door, so the grade is client-asserted and the record says so.
+  const entry = await room.record({
+    kind: `tool:${name}`,
+    payload: { tool: name },
+    seatId: 'rider',
+    ingress: 'webmcp',
+  });
+  freshHash = entry.hash;
+  renderAll();
 }
 
 $('verify').addEventListener('click', async () => {
@@ -76,32 +120,49 @@ $('verify').addEventListener('click', async () => {
     : `FAILED at entry #${r.seq}: ${r.reason}. expected ${short(r.expected)}, found ${short(r.found)}`;
 });
 
+$('advance').addEventListener('click', async () => {
+  const next = PHASES[PHASES.indexOf(room.phase) + 1];
+  if (!next) return;
+  const entry = await room.advance(next);
+  freshHash = entry.hash;
+  await syncPhaseTools();
+  renderAll();
+});
+
+$('question').textContent = QUESTION.trim();
+
 renderAll();
 
-// Register the read surface and report honestly whether an agent surface exists.
 const status = $('agent-status');
-const reg = await registerReadSurface(room, {
-  onCall: async (name) => {
-    // A tool call is itself an act, and it is recorded like any other — through
-    // the WebMCP door, so the grade is client-asserted and says so.
-    const entry = await room.record({
-      kind: `tool:${name}`,
-      payload: { tool: name },
-      seatId: 'rider',
-      ingress: 'webmcp',
-    });
-    freshHash = entry.hash;
-    renderAll();
-  },
-});
+const reg = await registerReadSurface(room, { onCall: recordToolCall });
 
 if (reg.ok) {
   status.dataset.state = 'ready';
-  status.textContent = `agent surface ready — ${reg.names.length} read-only tools registered`;
+  status.textContent = `agent surface ready — ${reg.names.length} read-only tools`;
+  // `toolchange` is the visible heartbeat of the phase machine: the badge moves
+  // because the tool surface actually changed, not because we told it to.
   document.modelContext.addEventListener('toolchange', () => {
-    status.textContent = `agent surface ready — tools changed at ${new Date().toLocaleTimeString()}`;
+    status.textContent = `tool surface changed — ${new Date().toLocaleTimeString()}`;
   });
 } else {
   status.dataset.state = 'absent';
   status.textContent = `no agent surface — ${reg.reason}. The room is still fully readable here.`;
 }
+
+await syncPhaseTools();
+
+// The cross-org line. `exposedTo` needs native WebMCP; the polyfill refuses it.
+// Whichever way it goes, the page SAYS which — a demo that quietly degraded
+// would be asserting a capability it does not have, which is the one thing this
+// project exists not to do.
+const partner = await registerPartnerSurface(room, { onCall: recordToolCall });
+const xorg = $('crossorg');
+if (partner.available) {
+  xorg.dataset.state = 'ready';
+  xorg.textContent = `cross-origin: exposed to ${partner.origin}`;
+} else {
+  xorg.dataset.state = 'absent';
+  xorg.textContent = `cross-origin: unavailable here — ${partner.reason}. No cross-org claim is being made.`;
+}
+
+renderAll();

@@ -139,4 +139,196 @@ export async function registerReadSurface(room, opts) {
   return { ok: true, controller, names: tools.map((t) => t.name) };
 }
 
+// ── Phase-scoped write tools ────────────────────────────────────────────────
+//
+// These exist only while the room is in their phase. They are registered on
+// entry and unregistered by aborting the controller on exit, which is what
+// makes "the phase IS the tool surface" literally true rather than a UI
+// convention: an agent in the Reveal phase cannot see `commit_to_round`,
+// because it is not registered.
+
+import { commitmentFor, freshNonce, checkReveal } from './round.js';
+
+/** The synthetic partner. A distinct origin, so `exposedTo` is exercised
+ *  across an actual origin boundary rather than same-origin against ourselves.
+ *  Acts arriving from it are graded `inherited`: recorded verbatim with the
+ *  origin they came from, trusted exactly as far as that origin is. */
+export const PARTNER_ORIGIN = 'https://partner.take-five.pages.dev';
+
+function commitTool(room, round, announce) {
+  return {
+    name: 'commit_to_round',
+    title: 'Commit to the round',
+    description: 'Seal a position without disclosing it. The room records only the hash of your position and a nonce; keep the nonce — you need it to reveal.',
+    inputSchema: {
+      type: 'object',
+      properties: { position: { type: 'string', description: 'Your position on the question.' } },
+      required: ['position'],
+    },
+    annotations: { readOnlyHint: false },
+    execute: async ({ position } = {}) => {
+      if (typeof position !== 'string' || !position.trim()) {
+        return text('A position is required. Nothing was recorded.');
+      }
+      if (room.phase !== 'Commit') return text(`Not in Commit — the room is in ${room.phase}. Nothing was recorded.`);
+      const nonce = freshNonce();
+      const commitment = await commitmentFor(position, nonce);
+      const entry = await room.record({
+        kind: 'commit',
+        payload: { commitment },
+        seatId: 'rider',
+        ingress: 'webmcp',
+      });
+      round.commitments.set('rider', { commitment, entryHash: entry.hash });
+      announce('commit_to_round');
+      return text(
+        `Committed. Your position is sealed, not disclosed.\n` +
+        `commitment: ${commitment}\n` +
+        `nonce:      ${nonce}\n` +
+        `chain entry #${entry.seq} ${entry.hash.slice(0, 12)}…\n` +
+        `Keep the nonce. Without it the commitment cannot be opened, and a reveal that does not hash to it is refused.`,
+      );
+    },
+  };
+}
+
+function revealTool(room, round, announce) {
+  return {
+    name: 'reveal_in_round',
+    title: 'Reveal in the round',
+    description: 'Open your commitment by supplying the position and nonce. The digest is recomputed off-page; a single changed byte fails the check.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        position: { type: 'string', description: 'The position you committed to, byte for byte.' },
+        nonce: { type: 'string', description: 'The nonce returned when you committed.' },
+      },
+      required: ['position', 'nonce'],
+    },
+    annotations: { readOnlyHint: false },
+    execute: async ({ position, nonce } = {}) => {
+      if (room.phase !== 'Reveal') return text(`Not in Reveal — the room is in ${room.phase}. Nothing was recorded.`);
+      const held = round.commitments.get('rider');
+      if (!held) return text('No commitment on record for this seat. There is nothing to open.');
+
+      const result = await verifyReveal({ commitment: held.commitment, value: position ?? '', nonce: nonce ?? '' });
+      const entry = await room.record({
+        kind: result.matches ? 'reveal' : 'reveal_refused',
+        payload: { commitment: held.commitment, matches: result.matches, checked_by: result.checked_by },
+        seatId: 'rider',
+        ingress: 'webmcp',
+      });
+      if (result.matches) round.reveals.set('rider', { value: position, ...result });
+      announce('reveal_in_round');
+
+      return text(
+        `${result.matches ? 'REVEAL ACCEPTED' : 'REVEAL REFUSED — not byte-identical'}\n` +
+        `commitment: ${held.commitment}\n` +
+        `recomputed: ${result.recomputed}\n` +
+        `checked by: ${result.checked_by} (${result.grade})\n` +
+        `chain entry #${entry.seq}\n` +
+        `${result.scope}`,
+      );
+    },
+  };
+}
+
+/** Prefer the off-page check; fall back to computing in the page and SAY SO.
+ *  A silent fallback would let a `server-observed` label survive a check that
+ *  never left the browser, which is precisely the over-claim the grades exist
+ *  to prevent. */
+async function verifyReveal({ commitment, value, nonce }) {
+  try {
+    const res = await fetch('/api/check-reveal', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commitment, value, nonce }),
+    });
+    if (res.ok) return await res.json();
+  } catch { /* fall through */ }
+  const local = await checkReveal({ commitment, value, nonce });
+  return {
+    ...local,
+    checked_by: 'in-page',
+    grade: 'client-asserted',
+    scope: 'the off-page check was unreachable, so this ran in the browser — graded down accordingly',
+  };
+}
+
+const PHASE_TOOLS = {
+  Commit: [commitTool],
+  Reveal: [revealTool],
+};
+
+/** Register the tools for a phase and return the controller that unregisters
+ *  them. Aborting is the ONLY way they come off — there is no unregisterTool in
+ *  the spec any more. */
+export async function registerPhaseTools(room, round, phase, { onCall } = {}) {
+  const builders = PHASE_TOOLS[phase] ?? [];
+  const mc = document.modelContext;
+  if (!mc || !builders.length) return { controller: null, names: [] };
+  const controller = new AbortController();
+  const announce = (n) => { if (onCall) onCall(n); };
+  const names = [];
+  for (const build of builders) {
+    const tool = build(room, round, announce);
+    // NO `exposedTo` here. It is an ALLOWLIST: naming only the partner origin
+    // would expose the tool to the partner and hide it from the agent riding
+    // this page — the opposite of what a phase tool is for.
+    await mc.registerTool(tool, { signal: controller.signal });
+    names.push(tool.name);
+  }
+  return { controller, names };
+}
+
+/** The cross-org line, attempted honestly.
+ *
+ *  `exposedTo` is in the spec and in the type definitions, but the polyfill
+ *  does NOT implement it: registering with it throws
+ *  `NotSupportedError: Cross-document tool exposure requires native WebMCP`.
+ *  So this capability exists only in a browser shipping WebMCP natively —
+ *  Chrome behind the flag, or ChatGPT's in-app browser.
+ *
+ *  The room's requirement was explicit: if the partner origin does not land,
+ *  the cross-org CLAIM is dropped, not just the feature. So this returns what
+ *  actually happened, the UI shows it, and nothing anywhere asserts a cross-org
+ *  capability that this browser could not provide. */
+export async function registerPartnerSurface(room, { onCall } = {}) {
+  const mc = document.modelContext;
+  if (!mc) return { available: false, reason: 'no model context' };
+  const controller = new AbortController();
+  const announce = (n) => { if (onCall) onCall(n); };
+  const tool = {
+    name: 'partner_attest',
+    title: 'Partner attestation',
+    description: 'Accept an attestation from the partner origin. Recorded verbatim with its source origin; graded `inherited` — trusted exactly as far as that origin is.',
+    inputSchema: {
+      type: 'object',
+      properties: { claim: { type: 'string', description: 'What the partner asserts.' } },
+      required: ['claim'],
+    },
+    annotations: { readOnlyHint: false, untrustedContentHint: true },
+    execute: async ({ claim } = {}) => {
+      const entry = await room.record({
+        kind: 'partner_attestation',
+        payload: { claim: String(claim ?? ''), origin: PARTNER_ORIGIN },
+        seatId: 'partner',
+        ingress: 'partner',
+      });
+      announce('partner_attest');
+      return text(
+        `Recorded verbatim from ${PARTNER_ORIGIN}\nchain entry #${entry.seq}\n` +
+        `grade: inherited — we did not observe this, we carried it. Trust it exactly as far as you trust that origin.`,
+      );
+    },
+  };
+  try {
+    await mc.registerTool(tool, { signal: controller.signal, exposedTo: [PARTNER_ORIGIN] });
+    return { available: true, controller, origin: PARTNER_ORIGIN };
+  } catch (err) {
+    controller.abort();
+    return { available: false, reason: err?.message ?? String(err), origin: PARTNER_ORIGIN };
+  }
+}
+
 export { OUTPUT_BUDGET };

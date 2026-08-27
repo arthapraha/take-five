@@ -49,6 +49,8 @@ h1 {
 
 .tagline { margin: 0.35rem 0 0.9rem; color: var(--muted); max-width: 46rem; }
 
+.statuses { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
 .status {
   display: inline-block;
   font: 500 0.8rem/1 var(--mono);
@@ -95,6 +97,21 @@ h3 { margin: 1.3rem 0 0.5rem; font-size: 0.78rem; text-transform: uppercase; let
   color: #fff;
 }
 .phases li.done { color: var(--ink); }
+
+.advance { margin-top: 0.7rem; width: 100%; }
+
+.question { margin: 0; font-size: 0.9rem; }
+
+.tools { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.tool {
+  font: 0.72rem var(--mono);
+  padding: 0.3rem 0.5rem;
+  border-radius: 5px;
+  border: 1px solid var(--rule);
+  color: var(--muted);
+}
+.tool.scoped { border-color: var(--accent); color: var(--accent); }
+.tool.none { border-style: dashed; }
 
 .seats { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
 .seats li { display: flex; justify-content: space-between; gap: 0.6rem; align-items: baseline; }
