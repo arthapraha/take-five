@@ -1,0 +1,29 @@
+{
+  "name": "take-five",
+  "version": "0.0.1",
+  "description": "A governed room for humans and agents, built on WebMCP.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test test/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arthapraha/take-five.git"
+  },
+  "license": "MIT",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/arthapraha/take-five/issues"
+  },
+  "homepage": "https://github.com/arthapraha/take-five#readme",
+  "devDependencies": {
+    "vite": "7.1.3",
+    "webmcp-types": "0.1.5"
+  },
+  "dependencies": {
+    "@mcp-b/webmcp-polyfill": "5.0.1"
+  },
+  "private": true
+}

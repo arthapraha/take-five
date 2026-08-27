@@ -1,0 +1,166 @@
+:root {
+  --bg: #fbfaf7;
+  --panel: #ffffff;
+  --ink: #1a1a1a;
+  --muted: #6b6660;
+  --rule: #e5e0d8;
+  --accent: #8a5a2b;
+  --observed-fg: #24603f;
+  --asserted: #8a6a1f;
+  --inherited: #5a5470;
+  --ok: #24603f;
+  --bad: #a33232;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161513;
+    --panel: #1e1d1a;
+    --ink: #ece8e1;
+    --muted: #9c968d;
+    --rule: #322f2a;
+    --accent: #d19a5e;
+    --observed-fg: #7fc9a0;
+    --asserted: #d8b463;
+    --inherited: #a9a2c4;
+    --ok: #7fc9a0;
+    --bad: #e08b8b;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 2rem 1.25rem 3rem;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+header { max-width: 68rem; margin: 0 auto 1.75rem; }
+
+h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 2.75rem);
+  letter-spacing: -0.02em;
+}
+
+.tagline { margin: 0.35rem 0 0.9rem; color: var(--muted); max-width: 46rem; }
+
+.status {
+  display: inline-block;
+  font: 500 0.8rem/1 var(--mono);
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  color: var(--muted);
+}
+.status[data-state="ready"] { color: var(--ok); border-color: currentColor; }
+.status[data-state="absent"] { color: var(--muted); }
+
+main {
+  max-width: 68rem;
+  margin: 0 auto;
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 60rem) {
+  main { grid-template-columns: 22rem 1fr; align-items: start; }
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem 1.35rem;
+}
+
+h2 { margin: 0 0 0.85rem; font-size: 1.05rem; letter-spacing: 0.01em; }
+h3 { margin: 1.3rem 0 0.5rem; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
+
+.phases { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.phases li {
+  font: 500 0.8rem/1 var(--mono);
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  color: var(--muted);
+}
+.phases li[aria-current="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.phases li.done { color: var(--ink); }
+
+.seats { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.seats li { display: flex; justify-content: space-between; gap: 0.6rem; align-items: baseline; }
+.seats .door { font: 0.72rem var(--mono); color: var(--muted); }
+
+.grades { margin: 0; display: grid; gap: 0.55rem; }
+.grades dt { font: 600 0.75rem var(--mono); }
+.grades dd { margin: 0.1rem 0 0; font-size: 0.82rem; color: var(--muted); }
+
+.grade { font: 600 0.7rem var(--mono); }
+.grade-server-observed { color: var(--observed-fg); }
+.grade-client-asserted { color: var(--asserted); }
+.grade-inherited { color: var(--inherited); }
+
+.chain-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+
+button {
+  font: 500 0.82rem/1 inherit;
+  padding: 0.5rem 0.85rem;
+  border-radius: 7px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); color: var(--accent); }
+
+.verdict {
+  margin: 0 0 0.9rem;
+  font: 0.82rem var(--mono);
+  padding: 0.6rem 0.75rem;
+  border-radius: 7px;
+  border: 1px solid currentColor;
+}
+.verdict.ok { color: var(--ok); }
+.verdict.bad { color: var(--bad); }
+
+.ledger { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+
+.entry {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 0.65rem 0.8rem;
+  animation: land 0.35s ease-out;
+}
+.entry.fresh { border-color: var(--accent); }
+
+.entry-top { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
+.seq { font: 600 0.78rem var(--mono); color: var(--muted); }
+.kind { font-weight: 600; font-size: 0.9rem; }
+.who { font-size: 0.82rem; color: var(--muted); }
+.hashes { margin-top: 0.35rem; font: 0.7rem var(--mono); color: var(--muted); word-break: break-all; }
+
+@keyframes land {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entry { animation: none; }
+}
+
+footer {
+  max-width: 68rem;
+  margin: 1.75rem auto 0;
+  color: var(--muted);
+  font-size: 0.83rem;
+}
+footer p { margin: 0; max-width: 46rem; }

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Take Five — a governed room</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Take Five</h1>
+      <p class="tagline">A governed room for humans and agents. Five phases, one chain, honest attribution.</p>
+      <div id="agent-status" class="status" data-state="checking">checking for an agent…</div>
+    </header>
+
+    <main>
+      <section class="panel" aria-labelledby="room-h">
+        <h2 id="room-h">The room</h2>
+
+        <ol id="phases" class="phases" aria-label="Phase"></ol>
+
+        <h3>Seats</h3>
+        <ul id="seats" class="seats"></ul>
+
+        <h3>Evidence grades</h3>
+        <dl id="grades" class="grades"></dl>
+      </section>
+
+      <section class="panel" aria-labelledby="chain-h">
+        <div class="chain-head">
+          <h2 id="chain-h">The chain</h2>
+          <button id="verify" type="button">Verify chain</button>
+        </div>
+        <p id="verdict" class="verdict" hidden></p>
+        <ol id="ledger" class="ledger"></ol>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        Every entry is hashed with SHA-256 over its own content and linked to its predecessor.
+        Verification runs in your browser — nothing here asks you to take the chain on trust.
+      </p>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
