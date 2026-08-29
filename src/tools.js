@@ -409,8 +409,13 @@ export async function registerPartnerSurface(room, { onCall } = {}) {
     execute: async ({ claim } = {}) => {
       const entry = await room.record({
         kind: 'partner_attestation',
-        payload: { claim: String(claim ?? ''), origin: PARTNER_ORIGIN },
-        seatId: 'partner',
+        // Not a seat id that resolves — deliberately. The partner is NOT at the
+        // table: it does not appear in the roster, holds no role, and takes no
+        // part. It is an outside origin that asserted something once. `room.record`
+        // falls back to this string when no seat matches, so the ledger row reads
+        // "Partner origin via partner — inherited" rather than "partner via
+        // partner", which is the one row a judge is most likely to stop on.
+        seatId: 'Partner origin',
         ingress: 'partner',
       });
       announce('partner_attest');
