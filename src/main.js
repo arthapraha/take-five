@@ -12,7 +12,7 @@
 // native `document.modelContext` wins and this is a no-op.
 import { initializeWebMCPPolyfill } from '@mcp-b/webmcp-polyfill';
 import { seedRoom, PHASES, INGRESS, GRADE_NOTE, QUESTION } from './room.js';
-import { registerReadSurface, registerPhaseTools, registerPartnerSurface } from './tools.js';
+import { registerReadSurface, registerPhaseTools, registerPartnerSurface, PARTNER_ORIGIN } from './tools.js';
 import { Round } from './round.js';
 
 initializeWebMCPPolyfill();
@@ -132,6 +132,48 @@ $('advance').addEventListener('click', async () => {
   freshHash = entry.hash;
   await syncPhaseTools();
   renderAll();
+});
+
+// The partner attestation, on demand rather than at load. A judge should be
+// able to WATCH the `inherited` row arrive — it is the only grade in the table
+// that says "we did not see this happen", and the point lands when you see the
+// room record something it did not witness.
+//
+// The frame is hidden: the partner page's own UI is not the demo. What the
+// room shows is the outcome it reports and the ledger entry it produced.
+$('invite-partner').addEventListener('click', async () => {
+  const out = $('partner-result');
+  out.hidden = false;
+  out.textContent = `inviting ${PARTNER_ORIGIN}…`;
+
+  if (PARTNER_ORIGIN.startsWith(location.origin)) {
+    out.textContent = 'the partner origin is this origin — nothing cross-origin can be shown from here.';
+    return;
+  }
+
+  const settle = (text) => { out.textContent = text; renderAll(); };
+  const onMessage = (ev) => {
+    if (ev.origin !== PARTNER_ORIGIN) return;
+    if (ev.data?.source !== 'take-five-partner') return;
+    window.removeEventListener('message', onMessage);
+    settle(ev.data.text);
+  };
+  window.addEventListener('message', onMessage);
+
+  const frame = document.createElement('iframe');
+  frame.hidden = true;
+  frame.src = `${PARTNER_ORIGIN}/partner.html?room=${encodeURIComponent(location.origin)}`;
+  frame.addEventListener('error', () => settle(`could not load ${PARTNER_ORIGIN} — the partner origin is not reachable.`));
+  document.body.appendChild(frame);
+
+  // Bounded, for the same reason the cross-origin chip is bounded: a partner
+  // that never answers must not leave the room saying "inviting…" forever.
+  setTimeout(() => {
+    window.removeEventListener('message', onMessage);
+    if (out.textContent.startsWith('inviting')) {
+      settle(`no answer from ${PARTNER_ORIGIN} within 8s. Either it is not deployed, or cross-origin invocation is unavailable in this browser. No cross-org claim is being made.`);
+    }
+  }, 8000);
 });
 
 $('question').textContent = QUESTION.trim();

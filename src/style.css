@@ -196,3 +196,11 @@ footer {
   font-size: 0.83rem;
 }
 footer p { margin: 0; max-width: 46rem; }
+.partner-body { max-width: 44rem; margin: 0 auto; }
+.partner-h { font-size: 1.6rem; margin: 0 0 0.4rem; }
+.partner-p { color: var(--muted); margin: 0 0 1rem; }
+.partner-origin { font: 0.75rem var(--mono); color: var(--muted); white-space: pre-line; margin: 0 0 1rem; }
+.partner-status { font: 0.8rem var(--mono); white-space: pre-line; padding: 0.7rem 0.85rem; border: 1px solid var(--rule); border-radius: 8px; }
+.partner-status[data-state="ready"] { color: var(--ok); border-color: currentColor; }
+.partner-status[data-state="absent"] { color: var(--muted); }
+.partner-result { margin: 0.6rem 0 0; font: 0.75rem var(--mono); color: var(--muted); white-space: pre-line; }

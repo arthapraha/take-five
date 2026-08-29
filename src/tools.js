@@ -169,8 +169,14 @@ import { confirmWithHuman } from './confirm.js';
  *  Harmless in practice — rooms are per-visitor and in-memory, and the tool only
  *  appends to the caller's own chain — but an attribution demo must not allowlist
  *  a hostname it does not own, and the correct origin costs nothing: a preview
- *  branch of our own project is a genuinely distinct origin that is ours. */
-export const PARTNER_ORIGIN = 'https://partner.take-five-lw7.pages.dev';
+ *  branch of our own project is a genuinely distinct origin that is ours.
+ *
+ *  Overridable with `?partner=<origin>` so the mechanism can be exercised
+ *  between two local ports — which are as cross-origin as two domains, since
+ *  origin is scheme + host + port — without deploying anything. */
+export const PARTNER_ORIGIN =
+  new URLSearchParams(location.search).get('partner')
+  ?? 'https://partner.take-five-lw7.pages.dev';
 
 function commitTool(room, round, announce) {
   return {
