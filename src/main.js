@@ -162,7 +162,11 @@ $('invite-partner').addEventListener('click', async () => {
 
   const frame = document.createElement('iframe');
   frame.hidden = true;
-  frame.src = `${PARTNER_ORIGIN}/partner.html?room=${encodeURIComponent(location.origin)}`;
+  // `/partner`, not `/partner.html`: Cloudflare Pages strips the extension and
+  // 308s to the clean path. Harmless in a frame, but a redirect hop on the one
+  // load this demo depends on is a needless moving part.
+  const partnerPath = PARTNER_ORIGIN.includes('localhost') ? '/partner.html' : '/partner';
+  frame.src = `${PARTNER_ORIGIN}${partnerPath}?room=${encodeURIComponent(location.origin)}`;
   frame.addEventListener('error', () => settle(`could not load ${PARTNER_ORIGIN} — the partner origin is not reachable.`));
   document.body.appendChild(frame);
 
