@@ -150,11 +150,27 @@ export async function registerReadSurface(room, opts) {
 import { commitmentFor, freshNonce, checkReveal } from './round.js';
 import { confirmWithHuman } from './confirm.js';
 
-/** The synthetic partner. A distinct origin, so `exposedTo` is exercised
- *  across an actual origin boundary rather than same-origin against ourselves.
- *  Acts arriving from it are graded `inherited`: recorded verbatim with the
- *  origin they came from, trusted exactly as far as that origin is. */
-export const PARTNER_ORIGIN = 'https://partner.take-five.pages.dev';
+/** The synthetic partner. A distinct origin, so `exposedTo` is exercised across
+ *  an actual origin boundary rather than same-origin against ourselves. Acts
+ *  arriving from it are graded `inherited`: recorded verbatim with the origin
+ *  they came from, trusted exactly as far as that origin is.
+ *
+ *  THIS MUST BE AN ORIGIN WE CONTROL, and the first version was not.
+ *
+ *  It read `partner.take-five.pages.dev`, invented as a placeholder on the
+ *  assumption that no such hostname could exist. Both halves were wrong.
+ *  Cloudflare Pages serves previews at `<branch>.<project>.pages.dev`, so that
+ *  is a real hostname shape — and the project `take-five` belongs to somebody
+ *  else (it currently serves SEO filler; our deploy is `take-five-lw7` precisely
+ *  because Cloudflare had to suffix the taken name, which nobody read as the
+ *  signal it was). `exposedTo` is an ALLOWLIST: we were authorising an origin a
+ *  stranger could have claimed by pushing a branch.
+ *
+ *  Harmless in practice — rooms are per-visitor and in-memory, and the tool only
+ *  appends to the caller's own chain — but an attribution demo must not allowlist
+ *  a hostname it does not own, and the correct origin costs nothing: a preview
+ *  branch of our own project is a genuinely distinct origin that is ours. */
+export const PARTNER_ORIGIN = 'https://partner.take-five-lw7.pages.dev';
 
 function commitTool(room, round, announce) {
   return {
