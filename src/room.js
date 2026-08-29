@@ -27,7 +27,12 @@ export const INGRESS = {
 
 export const GRADE_NOTE = {
   'server-observed': 'the credential was presented to the server directly',
-  'client-asserted': "the page's claim — same session, distinguished only by code path",
+  // Sharpened after an agent resolved this demo's confirmation dialog with
+  // nobody's hand on the keyboard. The old wording — "distinguished only by
+  // code path" — was true and still read as though the code path told you WHO
+  // acted. It does not. It tells you which door the act came through, and an
+  // agent driving the page can use the human's door.
+  'client-asserted': "the page's claim — which door the act came through, not who caused it; an agent driving the page can use this door",
   inherited: 'carried verbatim from another origin; trust derives from that origin',
 };
 
