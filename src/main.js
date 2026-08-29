@@ -162,6 +162,18 @@ $('invite-partner').addEventListener('click', async () => {
 
   const frame = document.createElement('iframe');
   frame.hidden = true;
+  // WebMCP is gated by Permissions Policy under the feature name `tools`, and a
+  // cross-origin frame does not inherit it — it has to be DELEGATED, per origin,
+  // by the embedder. Without this the frame throws
+  // `NotAllowedError: Access to the feature ... is disallowed by permissions
+  // policy`, which is what the first live test produced.
+  //
+  // This is worth more than a fix. It means cross-organisation tool access is
+  // not ambient: the room must hand the capability out explicitly, to a named
+  // origin, in a line anyone can read in the markup. That is the direction-of-
+  // privilege argument holding at the platform level rather than by our
+  // convention — and the grant is as auditable as the ledger entry it produces.
+  frame.allow = 'tools';
   // `/partner`, not `/partner.html`: Cloudflare Pages strips the extension and
   // 308s to the clean path. Harmless in a frame, but a redirect hop on the one
   // load this demo depends on is a needless moving part.
