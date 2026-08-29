@@ -67,6 +67,22 @@ function renderTools() {
     (scoped.length ? '' : '<li class="tool none">no write tools in this phase</li>');
 }
 
+/** Show the confirmation fingerprint ON THE ROW, not only inside a tool reply.
+ *  This is the one line a judge watching a video can actually read, and it is
+ *  the line that says whether the page could tell who pressed the button. It
+ *  was recorded on the chain before it was rendered anywhere, which meant the
+ *  measurement existed and could not be seen — an instrument nobody can read is
+ *  not an instrument. */
+function inputLine(e) {
+  const i = e.payload?.confirmation?.input;
+  if (!i) return '';
+  if (i.via) return `<div class="inputline">confirmed via ${i.via}</div>`;
+  const verdict = i.isTrusted
+    ? 'browser input pipeline — the page cannot tell this from a person'
+    : 'page script — not a real input event';
+  return `<div class="inputline">isTrusted <b>${i.isTrusted}</b> · prelude ${i.prelude} · client [${i.client}] — ${verdict}</div>`;
+}
+
 function renderLedger() {
   $('ledger').innerHTML = room.ledger.entries.slice().reverse().map((e) => {
     const fresh = e.hash === freshHash ? ' fresh' : '';
@@ -77,6 +93,7 @@ function renderLedger() {
         <span class="who">${e.actor.seat} via ${e.actor.ingress} — <span class="grade grade-${e.actor.grade}">${e.actor.grade}</span></span>
       </div>
       <div class="hashes">${short(e.hash)} &nbsp;prev ${short(e.prev)}</div>
+      ${inputLine(e)}
     </li>`;
   }).join('');
 }

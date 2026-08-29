@@ -113,12 +113,25 @@ export function buildTools(room, { onCall } = {}) {
         const r = await room.ledger.verifyEntry(hash ?? '');
         if (!r.found) return text(`No entry with hash ${hash ? short(hash) : '(none given)'}.`);
         const ok = r.content_matches_hash && r.links_to_predecessor;
+        // If the entry carries an input fingerprint, SHOW IT. Recording a
+        // measurement where nothing can read it is not recording it — the first
+        // version of this put the confirmation's raw properties on the chain
+        // and left them unreachable from every surface, which made the
+        // instrument useless at the moment it mattered.
+        const conf = room.ledger.find(hash)?.payload?.confirmation;
+        const inputLine = conf?.input
+          ? `\nconfirmed via: ${conf.method}\ninput observed: ${JSON.stringify(conf.input)}\n` +
+            `(raw properties of the press. isTrusted:false means page script. isTrusted:true means the\n` +
+            ` event came through the browser's input pipeline and the page cannot tell it from a person.)`
+          : '';
+
         return text(
           `Entry #${r.seq} — ${ok ? 'VERIFIED' : 'FAILED'}\n` +
           `content matches its hash: ${r.content_matches_hash}\n` +
           `links to predecessor:     ${r.links_to_predecessor}\n` +
           `attributed to: ${r.actor.seat} via ${r.actor.ingress}\n` +
-          `evidence grade: ${r.actor.grade} — this is how well the record knows, not how certain it sounds.`,
+          `evidence grade: ${r.actor.grade} — this is how well the record knows, not how certain it sounds.` +
+          inputLine,
         );
       },
     },

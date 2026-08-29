@@ -204,3 +204,4 @@ footer p { margin: 0; max-width: 46rem; }
 .partner-status[data-state="ready"] { color: var(--ok); border-color: currentColor; }
 .partner-status[data-state="absent"] { color: var(--muted); }
 .partner-result { margin: 0.6rem 0 0; font: 0.75rem var(--mono); color: var(--muted); white-space: pre-line; }
+.inputline { margin-top: 0.35rem; font: 0.7rem var(--mono); color: var(--asserted); word-break: break-word; }
