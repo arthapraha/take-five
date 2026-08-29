@@ -319,7 +319,11 @@ function ratifyTool(room, round, announce, onChange) {
         payload: {
           ruling: proposed,
           requested_by: request.hash,
-          confirmation: { method: outcome.method, note: outcome.note },
+          // `input` carries the raw properties of whatever pressed the button.
+          // It goes ON THE CHAIN, not just in the reply: if the page cannot tell
+          // a person from an agent, the least it can do is record what it saw
+          // and let a reader decide. An unrecorded observation is an opinion.
+          confirmation: { method: outcome.method, note: outcome.note, input: outcome.input ?? null },
         },
         seatId: 'host',
         ingress: 'ui',
@@ -346,6 +350,8 @@ function ratifyTool(room, round, announce, onChange) {
         `request entry #${request.seq} (agent, via webmcp)\n` +
         `decision entry #${entry.seq} (host, via ui)\n` +
         `confirmed by: ${outcome.method} — ${outcome.note}\n` +
+        `input observed: ${JSON.stringify(outcome.input ?? null)}\n` +
+        `(raw properties of the press. The page cannot tell a person from an agent; it records what it saw.)\n` +
         (outcome.confirmed ? 'The round is Closed.' : 'The round remains in Ruling.'),
       );
     },
