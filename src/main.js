@@ -146,9 +146,20 @@ if (reg.ok) {
   status.textContent = `agent surface ready — ${reg.names.length} read-only tools`;
   // `toolchange` is the visible heartbeat of the phase machine: the badge moves
   // because the tool surface actually changed, not because we told it to.
-  document.modelContext.addEventListener('toolchange', () => {
-    status.textContent = `tool surface changed — ${new Date().toLocaleTimeString()}`;
-  });
+  //
+  // GUARDED. `ModelContext extends EventTarget` in the spec, and in ChatGPT's
+  // in-app browser this call appears not to survive — the doc says that browser
+  // implements "a subset of the WebMCP APIs" and does not enumerate the subset.
+  // An unguarded throw here aborted the whole remaining load path, which is why
+  // the cross-origin chip was still reading its placeholder after four phase
+  // transitions. A capability we cannot use must not take the page down with it.
+  try {
+    document.modelContext.addEventListener('toolchange', () => {
+      status.textContent = `tool surface changed — ${new Date().toLocaleTimeString()}`;
+    });
+  } catch (err) {
+    status.textContent = `agent surface ready — ${reg.names.length} read-only tools (no toolchange event: ${err?.message ?? err})`;
+  }
 } else {
   status.dataset.state = 'absent';
   status.textContent = `no agent surface — ${reg.reason}. The room is still fully readable here.`;
@@ -160,8 +171,23 @@ await syncPhaseTools();
 // Whichever way it goes, the page SAYS which — a demo that quietly degraded
 // would be asserting a capability it does not have, which is the one thing this
 // project exists not to do.
-const partner = await registerPartnerSurface(room, { onCall: recordToolCall });
+// BOUNDED. A chip that never resolves makes no claim at all — it sits on its
+// placeholder and reads, to anyone looking, as a broken page rather than an
+// honest one. That happened in ChatGPT's in-app browser: the placeholder was
+// still showing after four phase transitions. Whatever this call does — resolve,
+// reject, or hang — the chip ends up saying something true.
 const xorg = $('crossorg');
+const partner = await Promise.race([
+  registerPartnerSurface(room, { onCall: recordToolCall }).catch((err) => ({
+    available: false,
+    reason: `registration threw: ${err?.message ?? err}`,
+  })),
+  new Promise((resolve) => setTimeout(
+    () => resolve({ available: false, reason: 'the registration call did not settle within 5s in this browser' }),
+    5000,
+  )),
+]);
+
 if (partner.available) {
   xorg.dataset.state = 'ready';
   xorg.textContent = `cross-origin: exposed to ${partner.origin}`;
