@@ -50,7 +50,28 @@ export class Ledger {
   /** Append an act. `actor` carries the three attribution fields the whole
    *  design turns on: which seat, which door it came through, and how strongly
    *  we actually know that. */
-  async append({ kind, payload, actor }) {
+  // Appends are SERIALISED, and this is load-bearing rather than tidy.
+  //
+  // `seq` and `prev` are read from live state, then the digest is awaited, then
+  // the entry is pushed. That await is a gap: two overlapping calls both read
+  // the same length and the same tip, and both push — producing entries that
+  // share a sequence number and a predecessor. A forked chain is not a chain,
+  // and every claim this project makes rests on it being one.
+  //
+  // Found in the judge environment by the agent reading our own ledger, which
+  // is the product working and the code failing in the same breath. Two
+  // overlapping `ratify_ruling` calls were enough to do it.
+  #tail = Promise.resolve();
+
+  async append(args) {
+    const run = this.#tail.then(() => this.#appendOne(args));
+    // Keep the queue alive when an append rejects: the caller still sees the
+    // rejection, but one bad entry must not wedge every later append.
+    this.#tail = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  async #appendOne({ kind, payload, actor }) {
     if (!actor || !actor.seat || !actor.ingress || !actor.grade) {
       throw new Error('every entry needs seat, ingress and grade — an unattributed act is not recordable');
     }

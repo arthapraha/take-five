@@ -53,7 +53,30 @@ export async function confirmWithHuman({ title, detail }) {
  *  cannot be styled, cannot be screenshotted usefully, and in some embedded
  *  browsers is suppressed entirely, which would turn a missing dialog into a
  *  silent refusal nobody could see. */
+// There is ONE dialog element, so there can be one confirmation at a time.
+//
+// Two overlapping `ratify_ruling` calls actually happened in the judge
+// environment: the first blocked on the modal, the agent's harness timed it out,
+// and it called again. Without this guard both would `showModal()` on the same
+// element and both would attach listeners — so a single click could resolve two
+// pending ratifications, and the room would record a decision the human made
+// once as though they had made it twice.
+//
+// A second request is REFUSED rather than queued. Queueing an irreversible act
+// behind a dialog the human has already answered is how one deliberate click
+// becomes two acts; refusing is the answer that cannot surprise anyone, and the
+// refusal lands on the chain like any other outcome.
+let confirmationOpen = false;
+
 function inPageConfirm({ title, detail, note }) {
+  if (confirmationOpen) {
+    return Promise.resolve({
+      confirmed: false,
+      method: 'refused',
+      note: 'another confirmation is already open — a second request cannot be answered by the same click',
+    });
+  }
+  confirmationOpen = true;
   return new Promise((resolve) => {
     const dialog = document.getElementById('confirm-dialog');
     document.getElementById('confirm-title').textContent = title;
@@ -61,6 +84,7 @@ function inPageConfirm({ title, detail, note }) {
     document.getElementById('confirm-note').textContent = note;
 
     const done = (confirmed) => {
+      confirmationOpen = false;
       dialog.close();
       yes.removeEventListener('click', onYes);
       no.removeEventListener('click', onNo);

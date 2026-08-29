@@ -98,6 +98,42 @@ test('an act with no evidence grade is refused outright', async () => {
   );
 });
 
+// Found in the judge environment, by the judge environment's own agent, reading
+// our ledger: "two different entries both numbered #14, sharing the same
+// predecessor — an apparent fork/inconsistency in the displayed chain."
+//
+// append() read `seq` and `prev`, then awaited the digest, THEN pushed. Two
+// overlapping calls therefore both saw the same length and the same tip. Every
+// guarantee this project makes rests on the chain being a chain.
+test('concurrent appends do not fork the chain', async () => {
+  const l = new Ledger();
+  await Promise.all([
+    l.append({ kind: 'a', payload: { i: 1 }, actor }),
+    l.append({ kind: 'b', payload: { i: 2 }, actor }),
+    l.append({ kind: 'c', payload: { i: 3 }, actor }),
+  ]);
+
+  const seqs = l.entries.map((e) => e.seq);
+  assert.equal(new Set(seqs).size, seqs.length, `duplicate seq numbers: ${seqs.join(',')}`);
+
+  const prevs = l.entries.map((e) => e.prev);
+  assert.equal(new Set(prevs).size, prevs.length, 'two entries must not share a predecessor');
+
+  const r = await l.verify();
+  assert.equal(r.ok, true, `chain must verify after concurrent appends: ${JSON.stringify(r)}`);
+});
+
+test('a burst of appends stays a single chain', async () => {
+  const l = new Ledger();
+  await Promise.all(
+    Array.from({ length: 25 }, (_, i) => l.append({ kind: 'burst', payload: { i }, actor })),
+  );
+  assert.equal(l.length, 25);
+  assert.deepEqual(l.entries.map((e) => e.seq), Array.from({ length: 25 }, (_, i) => i + 1));
+  const r = await l.verify();
+  assert.equal(r.ok, true, JSON.stringify(r));
+});
+
 test('canonical form is key-order independent', async () => {
   const a = await sha256Hex(preimage({ seq: 1, kind: 'x', payload: { b: 1, a: 2 }, actor, prev: GENESIS_PREV, ts: 't' }));
   const b = await sha256Hex(preimage({ ts: 't', prev: GENESIS_PREV, actor, payload: { a: 2, b: 1 }, kind: 'x', seq: 1 }));
