@@ -67,6 +67,29 @@ function renderTools() {
     (scoped.length ? '' : '<li class="tool none">no write tools in this phase</li>');
 }
 
+/** A ledger row may now carry bytes from ANOTHER ORIGIN. `renderLedger` builds
+ *  innerHTML, and a partner's claim is the one string on this page chosen by a
+ *  party other than the room — `partner_attest` carries `untrustedContentHint:
+ *  true` for exactly that reason. A room that recorded a cross-org claim
+ *  verbatim and then executed it as markup would be a worse failure than the
+ *  one that discarded it. */
+const esc = (s) => String(s).replace(
+  /[&<>"']/g,
+  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]),
+);
+
+/** The carried claim, on the row itself — the same argument as the fingerprint
+ *  below. `inherited` is the only grade that says "we did not see this happen",
+ *  and a reader cannot weigh how far to trust the origin without seeing what
+ *  the origin actually said. */
+function claimLine(e) {
+  const p = e.payload;
+  if (!p || typeof p.claim !== 'string') return '';
+  const shown = p.claim.length > 120 ? `${p.claim.slice(0, 120)}…` : p.claim;
+  return `<div class="inputline">${esc(p.origin)} said: “${esc(shown)}”` +
+    ` · sha256 ${esc(p.content_hash.slice(0, 10))}… — carried, not witnessed</div>`;
+}
+
 /** Show the confirmation fingerprint ON THE ROW, not only inside a tool reply.
  *  This is the one line a judge watching a video can actually read, and it is
  *  the line that says whether the page could tell who pressed the button. It
@@ -93,7 +116,7 @@ function renderLedger() {
         <span class="who">${e.actor.seat} via ${e.actor.ingress} — <span class="grade grade-${e.actor.grade}">${e.actor.grade}</span></span>
       </div>
       <div class="hashes">${short(e.hash)} &nbsp;prev ${short(e.prev)}</div>
-      ${inputLine(e)}
+      ${inputLine(e)}${claimLine(e)}
     </li>`;
   }).join('');
 }

@@ -91,6 +91,27 @@ export class Room {
   }
 }
 
+/** The payload an `inherited` entry has to carry to be worth anything: what was
+ *  said, who said it, and a digest a reader can recompute for themselves.
+ *
+ *  This was specified from the start as "partner payload verbatim + source
+ *  origin + content hash" and then not implemented — `partner_attest` took a
+ *  `claim`, dropped it, and recorded an entry whose own tool description said
+ *  "Recorded verbatim". The room told a caller it had kept something it threw
+ *  away, which is a worse failure than never having offered to keep it.
+ *
+ *  The hash covers the claim bytes AS RECORDED. It evidences what we carried,
+ *  never that the claim is true — that is the whole meaning of `inherited`, and
+ *  the surfaces that render this say so rather than leaving it to be inferred.
+ *
+ *  Exported and pure so it can be tested without a browser: the tool that calls
+ *  it needs `document.modelContext`, and a payload builder that could only be
+ *  exercised through the DOM would go the way of the first version. */
+export async function attestationPayload(claim, origin) {
+  const text = String(claim ?? '');
+  return { claim: text, origin, content_hash: await sha256Hex(text) };
+}
+
 export const QUESTION = 'Should the room adopt the proposal as drafted?\n';
 
 /** A per-visitor sandbox room, seeded with real history and left in Commit so

@@ -118,11 +118,22 @@ export function buildTools(room, { onCall } = {}) {
         // version of this put the confirmation's raw properties on the chain
         // and left them unreachable from every surface, which made the
         // instrument useless at the moment it mattered.
-        const conf = room.ledger.find(hash)?.payload?.confirmation;
+        const found = room.ledger.find(hash);
+        const conf = found?.payload?.confirmation;
         const inputLine = conf?.input
           ? `\nconfirmed via: ${conf.method}\ninput observed: ${JSON.stringify(conf.input)}\n` +
             `(raw properties of the press. isTrusted:false means page script. isTrusted:true means the\n` +
             ` event came through the browser's input pipeline and the page cannot tell it from a person.)`
+          : '';
+
+        // Same rule for a carried claim: an `inherited` entry a reader cannot
+        // read the claim out of is an assertion that something was recorded,
+        // which is exactly what this grade exists not to be.
+        const att = found?.payload;
+        const claimLine = att && typeof att.claim === 'string'
+          ? `\nattested from: ${att.origin}\nclaim (verbatim): ${att.claim}\ncontent hash: ${att.content_hash}\n` +
+            `(the hash is over the claim bytes as recorded, so you can recompute it. It evidences what\n` +
+            ` this room carried — never that the claim is true. Trust it as far as you trust that origin.)`
           : '';
 
         return text(
@@ -131,7 +142,7 @@ export function buildTools(room, { onCall } = {}) {
           `links to predecessor:     ${r.links_to_predecessor}\n` +
           `attributed to: ${r.actor.seat} via ${r.actor.ingress}\n` +
           `evidence grade: ${r.actor.grade} — this is how well the record knows, not how certain it sounds.` +
-          inputLine,
+          inputLine + claimLine,
         );
       },
     },
@@ -162,6 +173,7 @@ export async function registerReadSurface(room, opts) {
 
 import { commitmentFor, freshNonce, checkReveal } from './round.js';
 import { confirmWithHuman } from './confirm.js';
+import { attestationPayload } from './room.js';
 
 /** The synthetic partner. A distinct origin, so `exposedTo` is exercised across
  *  an actual origin boundary rather than same-origin against ourselves. Acts
@@ -187,8 +199,13 @@ import { confirmWithHuman } from './confirm.js';
  *  Overridable with `?partner=<origin>` so the mechanism can be exercised
  *  between two local ports — which are as cross-origin as two domains, since
  *  origin is scheme + host + port — without deploying anything. */
+// Read through `globalThis` so this module can be IMPORTED outside a browser.
+// Bare `location` throws at module scope under Node, which made every tool in
+// this file untestable by the suite — and the one line the attestation fix had
+// to change was therefore the one line no test could reach. Behaviour in a
+// browser is unchanged: same override, same default.
 export const PARTNER_ORIGIN =
-  new URLSearchParams(location.search).get('partner')
+  new URLSearchParams(globalThis.location?.search ?? '').get('partner')
   ?? 'https://partner.take-five-lw7.pages.dev';
 
 function commitTool(room, round, announce) {
@@ -398,24 +415,13 @@ export async function registerPhaseTools(room, round, phase, { onCall, onChange 
   return { controller, names };
 }
 
-/** The cross-org line, attempted honestly.
- *
- *  `exposedTo` is in the spec and in the type definitions, but the polyfill
- *  does NOT implement it: registering with it throws
- *  `NotSupportedError: Cross-document tool exposure requires native WebMCP`.
- *  So this capability exists only in a browser shipping WebMCP natively —
- *  Chrome behind the flag, or ChatGPT's in-app browser.
- *
- *  The room's requirement was explicit: if the partner origin does not land,
- *  the cross-org CLAIM is dropped, not just the feature. So this returns what
- *  actually happened, the UI shows it, and nothing anywhere asserts a cross-org
- *  capability that this browser could not provide. */
-export async function registerPartnerSurface(room, { onCall } = {}) {
-  const mc = document.modelContext;
-  if (!mc) return { available: false, reason: 'no model context' };
-  const controller = new AbortController();
+/** The tool descriptor, built separately from its registration so the suite can
+ *  exercise `execute` without a browser — the same split `buildTools` already
+ *  uses for the read surface. It is here because the attestation payload bug
+ *  lived in this `execute` and no test could reach it. */
+export function partnerTool(room, { onCall } = {}) {
   const announce = (n) => { if (onCall) onCall(n); };
-  const tool = {
+  return {
     name: 'partner_attest',
     title: 'Partner attestation',
     description: 'Accept an attestation from the partner origin. Recorded verbatim with its source origin; graded `inherited` — trusted exactly as far as that origin is.',
@@ -428,6 +434,13 @@ export async function registerPartnerSurface(room, { onCall } = {}) {
     execute: async ({ claim } = {}) => {
       const entry = await room.record({
         kind: 'partner_attestation',
+        // The claim, the origin that made it, and a recomputable digest over the
+        // claim bytes. Recording the ACT but not the CLAIM left this tool's own
+        // description — "Recorded verbatim with its source origin" — asserting
+        // something the entry did not hold, and `read_ledger` would have shown a
+        // judge an empty payload under that promise. An over-claim you can catch
+        // in one tool call is the most expensive kind this project can ship.
+        payload: await attestationPayload(claim, PARTNER_ORIGIN),
         // Not a seat id that resolves — deliberately. The partner is NOT at the
         // table: it does not appear in the roster, holds no role, and takes no
         // part. It is an outside origin that asserted something once. `room.record`
@@ -444,6 +457,27 @@ export async function registerPartnerSurface(room, { onCall } = {}) {
       );
     },
   };
+}
+
+/** The cross-org line, attempted honestly.
+ *
+ *  `exposedTo` is in the spec and in the type definitions, but the polyfill
+ *  does NOT implement it: registering with it throws
+ *  `NotSupportedError: Cross-document tool exposure requires native WebMCP`.
+ *  So this capability exists only in a browser shipping WebMCP natively —
+ *  Chrome behind the flag, or ChatGPT's in-app browser. Confirmed working in
+ *  Chrome 151 behind the WebMCP testing flags on 2026-08-31; that evidences the
+ *  mechanism, not general availability.
+ *
+ *  The room's requirement was explicit: if the partner origin does not land,
+ *  the cross-org CLAIM is dropped, not just the feature. So this returns what
+ *  actually happened, the UI shows it, and nothing anywhere asserts a cross-org
+ *  capability that this browser could not provide. */
+export async function registerPartnerSurface(room, opts = {}) {
+  const mc = document.modelContext;
+  if (!mc) return { available: false, reason: 'no model context' };
+  const controller = new AbortController();
+  const tool = partnerTool(room, opts);
   try {
     await mc.registerTool(tool, { signal: controller.signal, exposedTo: [PARTNER_ORIGIN] });
     return { available: true, controller, origin: PARTNER_ORIGIN };
