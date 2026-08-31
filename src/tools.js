@@ -68,8 +68,18 @@ export function buildTools(room, { onCall } = {}) {
         const all = room.ledger.entries;
         const slice = all.slice(from - 1, from - 1 + n);
         if (!slice.length) return text(`No entries at cursor ${from}. Ledger holds ${all.length}.`);
+        // The entry hash in FULL. This listing is the only place an agent can
+        // ever learn one, and `verify_receipt` does an exact `find()` on a full
+        // digest — so abbreviating here made that tool permanently uncallable,
+        // and with it the ONLY tool-side view of the confirmation fingerprint
+        // and the carried partner claim. Two fixes that landed earlier today
+        // were invisible to agents because of this one call to `short()`.
+        //
+        // `prev` stays abbreviated on purpose: it is a back-reference, and the
+        // preceding row carries that same digest in full. Nothing needs it as
+        // an input, and repeating it would double the cost against the budget.
         const lines = slice.map(
-          (e) => `#${e.seq} ${e.kind} — ${e.actor.seat} via ${e.actor.ingress} [${e.actor.grade}]\n   ${short(e.hash)} prev ${short(e.prev)}`,
+          (e) => `#${e.seq} ${e.kind} — ${e.actor.seat} via ${e.actor.ingress} [${e.actor.grade}]\n   ${e.hash}  prev ${short(e.prev)}`,
         );
         const next = from + slice.length;
         return text(

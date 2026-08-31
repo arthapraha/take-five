@@ -141,3 +141,47 @@ test('an agent can discover an artefact hash and call back with it', async () =>
   assert.match(fetched, new RegExp(QUESTION.trim().slice(0, 20)),
     'and must return the artefact text itself');
 });
+
+// `verify_receipt` could never be called either, and for the same reason one
+// layer along: it does an exact `find()` on a full entry digest, and NO surface
+// in the system emitted one. `read_ledger` abbreviated, `current_phase` shortened
+// the tip, the write tools replied with sequence numbers, and every UI render
+// went through `short()`.
+//
+// It compounds, which is why this mattered more than get_artefact. `verify_receipt`
+// is the only TOOL-side surface that renders the confirmation fingerprint and the
+// carried partner claim — so the two fixes that landed earlier today were
+// invisible to any agent until this one.
+//
+// Round trip again: read the ledger the way an agent must, take a hash out of
+// what it was handed, and verify with it. Fails at the second step against the
+// abbreviating version.
+test('an agent can verify a receipt using a hash read_ledger gave it', async () => {
+  const room = await seedRoom('Room host');
+  const t = Object.fromEntries(buildTools(room, {}).map((x) => [x.name, x]));
+
+  const listing = t.read_ledger.execute({}).content[0].text;
+  const digests = listing.match(/\b[0-9a-f]{64}\b/g) ?? [];
+  assert.ok(digests.length >= 1,
+    'read_ledger must emit at least one FULL entry digest — it is the only surface that can');
+
+  const verdict = (await t.verify_receipt.execute({ hash: digests[0] })).content[0].text;
+  assert.match(verdict, /VERIFIED/, 'a hash the room handed out must be one the room accepts');
+  assert.doesNotMatch(verdict, /No entry with hash/);
+});
+
+test('the fingerprint and the carried claim are reachable through verify_receipt', async () => {
+  // The point of the fix: both earlier repairs are only visible to an agent
+  // through this path, so assert the path end to end rather than the storage.
+  const room = await seedRoom('Room host');
+  const entry = await attest(room, 'the partner asserts something checkable');
+  const t = Object.fromEntries(buildTools(room, {}).map((x) => [x.name, x]));
+
+  const listing = t.read_ledger.execute({ cursor: entry.seq }).content[0].text;
+  const digests = listing.match(/\b[0-9a-f]{64}\b/g) ?? [];
+  const verdict = (await t.verify_receipt.execute({ hash: digests[0] })).content[0].text;
+
+  assert.match(verdict, /the partner asserts something checkable/,
+    'the claim must be readable by an agent, not merely stored');
+  assert.match(verdict, /content hash:/);
+});

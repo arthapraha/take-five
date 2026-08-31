@@ -37,7 +37,7 @@ npm run dev
 
 Open the URL Vite prints. The five phases, the chain, the ledger and the grade table all work in any modern browser: `@mcp-b/webmcp-polyfill` installs `document.modelContext` at load, so the agent surface exists even where the browser does not ship WebMCP natively.
 
-`npm test` runs the suite — 23 tests on `node:test`, no runner, most of them on the failure side. `npm run build` emits to `dist/`.
+`npm test` runs the suite — 26 tests on `node:test`, no runner, most of them on the failure side. `npm run build` emits to `dist/`.
 
 The room is **per-visitor and in-memory**. A reload is a fresh chain, whoever opens the page holds the host role, and there is no server state and no database. That is deliberate: a visitor is the host of their own room and can walk the whole flow without any act from us.
 
