@@ -92,10 +92,20 @@ export function buildTools(room, { onCall } = {}) {
         announce('get_artefact');
         const a = room.artefacts.get(hash);
         if (!a) {
-          const known = [...room.artefacts.values()].map((x) => `${x.name} ${short(x.hash)}`).join(', ');
-          return text(`No artefact ${hash ? short(hash) : '(none given)'}.\nHeld: ${known || 'none'}`);
+          // FULL hashes here, and that is the whole point of this branch. The
+          // lookup above is an exact match, so a caller handed `3cfa0011…4bb0`
+          // can never turn it into a successful call — and this listing was the
+          // ONLY place an agent could learn a hash at all. Abbreviating it made
+          // the tool advertise itself and then refuse every caller: recorded
+          // internally, unreachable from every surface, which is the third time
+          // this project has caught itself doing that.
+          const known = [...room.artefacts.values()].map((x) => `${x.name} ${x.hash}`).join('\n  ');
+          return text(
+            `No artefact ${hash ? short(hash) : '(none given)'}.\n`
+            + `Held (full digests — pass one back verbatim):\n  ${known || 'none'}`,
+          );
         }
-        return text(`${a.name} — ${a.bytes} bytes, ${short(a.hash)}\n\n${a.text}`);
+        return text(`${a.name} — ${a.bytes} bytes, ${a.hash}\n\n${a.text}`);
       },
     },
     {

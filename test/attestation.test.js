@@ -15,9 +15,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Room, attestationPayload } from '../src/room.js';
+import { Room, seedRoom, QUESTION, attestationPayload } from '../src/room.js';
 import { sha256Hex } from '../src/chain.js';
-import { partnerTool, PARTNER_ORIGIN } from '../src/tools.js';
+import { partnerTool, buildTools, PARTNER_ORIGIN } from '../src/tools.js';
 
 const ORIGIN = 'https://partner.example.test';
 
@@ -114,4 +114,30 @@ test('altering a recorded claim after the fact breaks verification', async () =>
   assert.equal(r.ok, false, 'a claim outside the hash is a claim anyone can rewrite');
   assert.equal(r.seq, entry.seq, 'verification must name the entry that was altered');
   assert.equal(r.reason, 'hash mismatch');
+});
+
+// `get_artefact` advertised itself and then refused every caller. Its lookup is
+// an exact Map match, but the ONLY surface that ever named a hash — its own
+// "Held:" listing on the not-found path — abbreviated it through `short()`.
+// `read_ledger` prints no payload and the UI rows are abbreviated too, so there
+// was no path by which an agent could learn a full digest. One of five
+// advertised read tools could not be used.
+//
+// This is the round trip, not a string check: discover a hash the way an agent
+// must, then call with exactly what was handed over. It fails against the old
+// code at the second step.
+test('an agent can discover an artefact hash and call back with it', async () => {
+  const room = await seedRoom('Room host');
+  const [get] = buildTools(room, {}).filter((t) => t.name === 'get_artefact');
+
+  const listing = get.execute({}).content[0].text;
+
+  const digests = listing.match(/\b[0-9a-f]{64}\b/g) ?? [];
+  assert.ok(digests.length >= 1,
+    'the not-found listing must name a FULL digest — an abbreviated one can never be passed back');
+
+  const fetched = get.execute({ hash: digests[0] }).content[0].text;
+  assert.match(fetched, /question\.md/, 'the discovered digest must actually resolve');
+  assert.match(fetched, new RegExp(QUESTION.trim().slice(0, 20)),
+    'and must return the artefact text itself');
 });
