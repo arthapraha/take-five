@@ -15,7 +15,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Room, seedRoom, QUESTION, attestationPayload } from '../src/room.js';
+import { Room, seedRoom, QUESTION, INGRESS, attestationPayload } from '../src/room.js';
 import { sha256Hex } from '../src/chain.js';
 import { partnerTool, buildTools, PARTNER_ORIGIN } from '../src/tools.js';
 
@@ -184,4 +184,54 @@ test('the fingerprint and the carried claim are reachable through verify_receipt
   assert.match(verdict, /the partner asserts something checkable/,
     'the claim must be readable by an agent, not merely stored');
   assert.match(verdict, /content hash:/);
+});
+
+// The thesis, asserted against the evidence store rather than the prose.
+//
+// `INGRESS.ui.actor` said "human-initiated", so every UI-door entry recorded a
+// claim about WHO acted — beside a fingerprint that frequently says the opposite
+// (`isTrusted: false` is page script). The README and grade legend were
+// corrected for this in 62da160 after an agent resolved our dialog; the durable
+// record was not. This test exists so the record cannot drift back.
+test('no ingress path records a claim about who the actor was', async () => {
+  const forbidden = /\bhuman[- ]initiated\b|\bby a human\b|\bhuman confirmed\b/i;
+  for (const [door, path] of Object.entries(INGRESS)) {
+    assert.doesNotMatch(path.actor, forbidden,
+      `ingress "${door}" asserts a human actor; no door can establish that`);
+  }
+  assert.match(INGRESS.ui.actor, /does not establish the actor/,
+    'the ui door must say plainly that it cannot identify who acted');
+});
+
+test('a ui entry never asserts a human beside a page-script fingerprint', async () => {
+  const room = await seedRoom('Room host');
+  const entry = await room.record({
+    kind: 'ruling_ratified',
+    payload: { confirmation: { method: 'in-page dialog', input: { isTrusted: false } } },
+    seatId: 'host',
+    ingress: 'ui',
+  });
+  assert.equal(entry.payload.confirmation.input.isTrusted, false);
+  assert.doesNotMatch(entry.actor.attribution, /human/i,
+    'the entry must not claim a human in the same breath as evidence of page script');
+});
+
+// The truncation notice used to name the budget (1500) rather than the point it
+// actually cut (1410). The "N more" count was right by the compensation of the
+// same fudge, which is how it survived.
+test('the truncation notice states where it actually cut', async () => {
+  const room = await seedRoom('Room host');
+  const t = Object.fromEntries(buildTools(room, {}).map((x) => [x.name, x]));
+  const big = 'x'.repeat(4000);
+  const hash = await room.addArtefact('big.md', big);
+
+  const out = t.get_artefact.execute({ hash }).content[0].text;
+  const m = out.match(/truncated at (\d+) of (\d+) chars — (\d+) more/);
+  assert.ok(m, 'the notice must name the cut point, the total, and the remainder');
+
+  const [, cut, total, more] = m.map(Number);
+  assert.ok(out.length <= Number(total), 'output cannot exceed what it reports as the total');
+  assert.equal(Number(cut) + Number(more), Number(total),
+    'cut + remaining must equal the total, or the notice is arithmetic fiction');
+  assert.ok(out.startsWith('big.md'), 'the retained head is real content, not the notice');
 });

@@ -23,6 +23,27 @@ const ROOM_ORIGIN = new URLSearchParams(location.search).get('room')
 
 const $ = (id) => document.getElementById(id);
 
+/** `executeTool` hands back a JSON STRING here, not an object — the same Chrome
+ *  calling convention that takes arguments as a string going in. Reading
+ *  `result.content[0].text` off a string yields undefined, so the fallback fired
+ *  and the room displayed an escaped JSON blob:
+ *
+ *    attestation accepted by the room.
+ *    "{\"content\":[{\"type\":\"text\",\"text\":\"Recorded verbatim from…
+ *
+ *  That is the single most-watched line of this demo — the moment a claim
+ *  crosses an organisation boundary — and it read as a bug rather than a
+ *  transcript. Parse the string when we are given one, and fall back to showing
+ *  the raw reply rather than a stringified one, so a shape we did not anticipate
+ *  is still legible instead of double-encoded. */
+function replyText(result) {
+  const parsed = typeof result === 'string'
+    ? (() => { try { return JSON.parse(result); } catch { return null; } })()
+    : result;
+  return parsed?.content?.[0]?.text
+    ?? (typeof result === 'string' ? result : JSON.stringify(result));
+}
+
 function report(state, text) {
   const el = $('partner-status');
   el.dataset.state = state;
@@ -69,8 +90,7 @@ if (location.origin === ROOM_ORIGIN) {
       const claim = `Attested by ${location.origin} at ${new Date().toISOString()}`;
       // Arguments go as a JSON string — the Chrome-style calling convention.
       const result = await document.modelContext.executeTool(attest, JSON.stringify({ claim }));
-      const text = result?.content?.[0]?.text ?? JSON.stringify(result);
-      report('ready', `attestation accepted by the room.\n\n${text}`);
+      report('ready', `attestation accepted by the room.\n\n${replyText(result)}`);
     }
   } catch (err) {
     report('absent', `cross-origin invocation failed: ${err?.name ?? 'Error'}: ${err?.message ?? err}`);

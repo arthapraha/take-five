@@ -18,7 +18,20 @@ export const PHASES = ['Open', 'Commit', 'Reveal', 'Ruling', 'Closed'];
  *  that. We record attribution durably; we do not claim to have separated a
  *  rider from its session. */
 export const INGRESS = {
-  ui: { label: 'Web UI handler', actor: 'human-initiated', grade: 'client-asserted' },
+  // NOT "human-initiated", which is what this said and what this build
+  // disproved. An agent driving the page takes this door as readily as a person
+  // does — we watched one do it. The README and the grade legend were corrected
+  // for that in 62da160; the DURABLE RECORD was not, so every UI entry went on
+  // asserting a human while sitting beside a fingerprint reading
+  // `isTrusted: false` — page script. The prose was scrupulous and the evidence
+  // store contradicted it, which is this project's own thesis failing in the one
+  // place it cannot afford to.
+  //
+  // This field describes THE DOOR. What actually pressed the button, where it
+  // can be observed at all, lives in `payload.confirmation.input` — recorded
+  // once, rendered on the row and in `verify_receipt`. Deriving a prose
+  // duplicate here would just create a second thing to fall out of step.
+  ui: { label: 'Web UI handler', actor: 'through the page\'s own UI; this door does not establish the actor', grade: 'client-asserted' },
   webmcp: { label: 'WebMCP tool call', actor: 'agent-initiated, riding the human session', grade: 'client-asserted' },
   mcp: { label: 'MCP seat', actor: 'agent, first-party', grade: 'server-observed' },
   room: { label: 'Room bookkeeping', actor: 'the room', grade: 'server-observed' },

@@ -11,10 +11,19 @@
 
 const OUTPUT_BUDGET = 1500;
 
+// The notice has to state where the cut ACTUALLY fell. It said "truncated at
+// 1500" while cutting at 1410 — the budget minus the room the notice itself
+// occupies. The "N more" figure was right, by the compensation of the same
+// fudge, which is how it survived review. A tool whose first sentence about its
+// own output is false is the smallest possible version of this project's one
+// failure mode, and it fires on a judge asking an agent to read the whole
+// ledger.
+const TRUNCATE_AT = OUTPUT_BUDGET - 90;
+
 function text(s) {
   const body = s.length <= OUTPUT_BUDGET
     ? s
-    : `${s.slice(0, OUTPUT_BUDGET - 90)}\n… truncated at ${OUTPUT_BUDGET} chars — ${s.length - OUTPUT_BUDGET + 90} more. Narrow the window and call again.`;
+    : `${s.slice(0, TRUNCATE_AT)}\n… truncated at ${TRUNCATE_AT} of ${s.length} chars — ${s.length - TRUNCATE_AT} more. Narrow the window and call again.`;
   return { content: [{ type: 'text', text: body }] };
 }
 
