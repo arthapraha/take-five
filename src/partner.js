@@ -39,9 +39,20 @@ $('partner-origin').textContent = `this page: ${location.origin}\nthe room:  ${R
 if (location.origin === ROOM_ORIGIN) {
   report('absent', 'same origin as the room — this proves nothing. Serve this page from a different origin.');
 } else if (!document.modelContext) {
-  report('absent', 'no document.modelContext here — this browser has no WebMCP, so cross-origin invocation cannot be attempted.');
+  // CORRECTED 2026-08-31. This said "this browser has no WebMCP", and in the
+  // case that matters most that sentence is FALSE — measured in ChatGPT's in-app
+  // browser, where the room's own chip reads `cross-origin: exposed to …` two
+  // inches above this line. The browser has WebMCP; this FRAME does not. The
+  // old wording inferred browser-absence from frame-absence, which is a claim
+  // wider than the evidence, in the one message whose whole job is to report a
+  // limitation honestly. A page that over-claims in its failure text is doing
+  // the thing this project exists to refuse.
+  report('absent',
+    'no document.modelContext in this frame. The browser may still provide WebMCP to '
+    + 'top-level documents only — check the room\'s own chip, which reports what IT sees. '
+    + 'Either way, cross-origin invocation cannot be attempted from here.');
 } else if (typeof document.modelContext.getTools !== 'function') {
-  report('absent', 'this browser exposes modelContext without getTools — cannot query the room.');
+  report('absent', 'modelContext is present in this frame but exposes no getTools — cannot query the room.');
 } else {
   try {
     // The cross-origin query. `fromOrigins` is how a document asks for tools
