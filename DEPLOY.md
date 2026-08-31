@@ -111,14 +111,21 @@ subset and this path is untested there.
 
 ## Before the repo goes public
 
-Two things, in this order:
+**Both gates are cleared. Nothing blocks the flip.**
 
-1. **The patent decision — still open.** Publishing *is* the disclosure event
-   and there is no undoing it, so this gates the flip and nothing else gates it.
-   Reviewed at the 30 August checkpoint; not concluded there.
-2. ~~The two-minute name check on `take-five`~~ — **done, 30 August, clear.**
-   Worth recording what it found: `take-five.pages.dev` is a stranger's, which
-   is why the Pages project is `take-five-lw7`.
+1. **The patent decision — closed 31 August: no patent.** Publishing is the
+   disclosure event, so this gated the flip and nothing else did. Decided
+   against filing on the prior-art scan: the design is an assembly of well-known
+   parts, and WebMCP's own proposal is written prior art on the core use case.
+
+   The decision is not a retreat from protection, it is a different protection.
+   **Publishing under MIT and describing the mechanism publicly is itself the
+   protective act:** it puts the mechanism in the prior art, where nobody else
+   can file against it. Worth knowing before anyone reads "no patent" here and
+   assumes the question was dropped rather than answered.
+2. **The two-minute name check on `take-five` — done 30 August, clear.** Worth
+   recording what it found: `take-five.pages.dev` is a stranger's, which is why
+   the Pages project is `take-five-lw7`.
 
 The MIT licence is already in the first commit, so flipping visibility is a
 single switch and GitHub's licence detector picks it up immediately — which is

@@ -46,7 +46,13 @@ export class Room {
     this.seats = [
       { id: 'host', name: hostName, kind: 'human', role: 'host', door: 'ui' },
       { id: 'rider', name: 'Riding agent', kind: 'agent', role: 'participant', door: 'webmcp' },
-      { id: 'mcp-seat', name: 'Claude Code', kind: 'agent', role: 'participant', door: 'mcp' },
+      // Named for what the door means, not for a product. The distinguishing
+      // property of this seat is that it holds its OWN credential and presents
+      // it to the server directly — which is precisely why its acts grade
+      // `server-observed` while the rider's grade `client-asserted`. A vendor
+      // name here would have said nothing about that, and put a third party's
+      // trademark on screen for the length of a demo video.
+      { id: 'mcp-seat', name: 'Credentialed agent', kind: 'agent', role: 'participant', door: 'mcp' },
     ];
     this.artefacts = new Map();
   }
