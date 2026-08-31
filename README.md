@@ -16,9 +16,11 @@ Every entry on the ledger carries three fields: **seat identity**, **ingress pat
 |---|---|---|
 | Web UI handler (a click on the page — by a person, or by an agent driving it) | the human's seat | `client-asserted` |
 | WebMCP tool call (an agent riding the session) | the human's seat, agent-initiated | `client-asserted` |
-| MCP seat (an agent with its own credential) | the agent's own seat | `server-observed` |
+| MCP seat (an agent with its own credential) † | the agent's own seat | `server-observed` |
 | Room bookkeeping (hashing, phase records) | the room | `server-observed` |
 | Partner origin via `exposedTo` | the partner's declared seat | `inherited` |
+
+† **The MCP door is defined but not exercised in this build.** No tool in Take Five records through it, so the `Credentialed agent` seat sits in the roster without ever acting. It is here because the table is an argument about *what a door can establish*, and that argument needs the case where a credential reaches the server directly — but a row the demo cannot fill is a promise, not a demonstration. Room bookkeeping produces the `server-observed` rows you can actually see. Scoped as future work rather than quietly listed alongside the four that work.
 
 At the WebMCP door, UI handlers and registered `execute` callbacks are disjoint code paths — so the record can say **how an act arrived**. It cannot say **who caused it**: an agent driving the page can take the UI path as readily as a person can. We tested this rather than assumed it, and an agent resolved a confirmation dialog in this demo with nobody's hand on the keyboard.
 
