@@ -227,7 +227,23 @@ $('invite-partner').addEventListener('click', async () => {
   setTimeout(() => {
     window.removeEventListener('message', onMessage);
     if (out.textContent.startsWith('inviting')) {
-      settle(`no answer from ${PARTNER_ORIGIN} within 8s. Either it is not deployed, or cross-origin invocation is unavailable in this browser. No cross-org claim is being made.`);
+      // This offers CAUSES, so the list has to be honest about being partial.
+      // It used to name two — not deployed, or no cross-origin invocation in
+      // this browser — and the second was the same over-claim the partner page
+      // was corrected for: it reads browser-absence into what may only be
+      // frame-absence. Measured 31 Aug in ChatGPT's in-app browser, WebMCP is
+      // present on the top-level document and absent from the embedded frame,
+      // which is a third cause the old sentence could not express.
+      //
+      // A silent partner is the one case where the room learns NOTHING — no
+      // report arrives, so every cause is a guess. Saying so is the honest
+      // shape; ranking guesses as if the room had observed them is not.
+      settle(
+        `no answer from ${PARTNER_ORIGIN} within 8s — the partner never reported, so the room `
+        + `cannot say why. It may not be deployed; the frame may have no document.modelContext `
+        + `even where this browser provides WebMCP to the top-level document; or the call may `
+        + `have failed silently. No cross-org claim is being made.`,
+      );
     }
   }, 8000);
 });
