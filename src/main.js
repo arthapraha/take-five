@@ -14,6 +14,7 @@ import { initializeWebMCPPolyfill } from '@mcp-b/webmcp-polyfill';
 import { seedRoom, PHASES, INGRESS, GRADE_NOTE, QUESTION } from './room.js';
 import { registerReadSurface, registerPhaseTools, registerPartnerSurface, PARTNER_ORIGIN } from './tools.js';
 import { Round } from './round.js';
+import { attachBridge } from './bridge.js';
 
 initializeWebMCPPolyfill();
 
@@ -280,6 +281,11 @@ if (reg.ok) {
 }
 
 await syncPhaseTools();
+
+// t-bc1b: opt-in local agent bridge. A no-op without ?bridge=; with it, an
+// MCP client outside the browser can call the tools this page publishes,
+// through executeTool, so every call lands as a tool:<name> row like any other.
+await attachBridge(room);
 
 // The cross-org line. `exposedTo` needs native WebMCP; the polyfill refuses it.
 // Whichever way it goes, the page SAYS which — a demo that quietly degraded
