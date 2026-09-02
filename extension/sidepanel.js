@@ -1,4 +1,4 @@
-// Take Five Sidecar — the panel. It is a prompt surface and nothing else: it
+// Take Five Agent (codename Sidecar) — the panel. It is a prompt surface and nothing else: it
 // never reads the page (Hermes gate, take-five seq 1735). Its only view of the
 // room is what the local sidecar returns: which agent answered, which tools
 // were called, what came back.
@@ -34,7 +34,7 @@ async function connect() {
   try {
     const h = await fetch(`${base()}/health`).then((r) => r.json());
     const t = await fetch(`${base()}/tools`, { headers: headers() });
-    if (t.status === 401) throw new Error('token refused by the sidecar');
+    if (t.status === 401) throw new Error('token refused by the local agent');
     const { tools } = await t.json();
     agent = h.agent;
     who.dataset.state = 'on';
@@ -60,18 +60,18 @@ $('ask').addEventListener('submit', async (ev) => {
   try {
     const r = await fetch(`${base()}/prompt`, { method: 'POST', headers: headers(), body: JSON.stringify({ prompt }) });
     const res = await r.json();
-    if (r.status === 409) { row('error', 'sidecar', 'a prompt is already running — one at a time'); return; }
-    if (!r.ok) { row('error', 'sidecar', res.error ?? `HTTP ${r.status}`); return; }
+    if (r.status === 409) { row('error', 'local agent', 'a prompt is already running — one at a time'); return; }
+    if (!r.ok) { row('error', 'local agent', res.error ?? `HTTP ${r.status}`); return; }
     // The "tools the page offers now" line follows the page, not the last Connect.
     fetch(`${base()}/tools`, { headers: headers() }).then((t) => t.json()).then(({ tools }) => { $('tools').textContent = `tools the page offers now: ${tools.join(', ')}`; }).catch(() => {});
     for (const e of res.transcript) {
       if (e.type === 'tool_call') row('tool_call', `${res.agent.model} → ${e.name}`, JSON.stringify(e.args));
       else if (e.type === 'tool_result') row(`tool_result${e.isError ? ' err' : ''}`, `page → ${e.name}${e.isError ? ' (error)' : ''}`, e.text);
       else if (e.type === 'final') row('final', `${res.agent.model} via ${res.agent.via}`, e.text);
-      else if (e.type === 'stopped') row('error', 'sidecar', e.note);
+      else if (e.type === 'stopped') row('error', 'local agent', e.note);
     }
   } catch (err) {
-    row('error', 'sidecar', err?.message ?? String(err));
+    row('error', 'local agent', err?.message ?? String(err));
   } finally {
     sendBtn.disabled = false;
   }

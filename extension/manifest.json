@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Take Five Sidecar",
+  "name": "Take Five Agent",
   "version": "0.1.0",
-  "description": "Type a prompt; a local agent outside the browser calls the tools a Take Five page publishes through WebMCP, and every call lands on the page's chain. Our own side panel — not a vendor's extension.",
-  "action": { "default_title": "Open Take Five Sidecar" },
+  "description": "Type a prompt; a local agent outside the browser calls the tools a Take Five page publishes through WebMCP, and every call lands on the page's chain. Our own panel — not a vendor's extension.",
+  "action": { "default_title": "Open Take Five Agent" },
   "side_panel": { "default_path": "sidepanel.html" },
   "permissions": ["sidePanel", "storage"],
   "background": { "service_worker": "background.js" }
