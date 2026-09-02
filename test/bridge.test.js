@@ -79,7 +79,8 @@ test('2. the tool list pushed to the relay mirrors getTools(), and carries the t
   assert.deepEqual(push.body.tools[0].inputSchema, TOOLS[0].inputSchema, 'schemas travel intact — an agent needs them to call correctly');
   assert.equal(push.headers['x-bridge-token'], TOKEN, 'every request to the relay presents the token');
   assert.equal(w.streams.length, 1);
-  assert.equal(w.streams[0].url, `${RELAY}/events?token=${encodeURIComponent(TOKEN)}`, 'EventSource cannot carry a header, so the token rides the query');
+  assert.ok(w.streams[0].url.startsWith(`${RELAY}/events?token=${encodeURIComponent(TOKEN)}&page=`), 'EventSource cannot carry a header, so the token and the page nonce ride the query');
+  assert.match(w.streams[0].url.split('&page=')[1], /^[0-9a-f]{32}$/, 'the nonce is the 32-hex id of this page load');
 });
 
 test('3. a call message reaches executeTool with the named tool and JSON args, and the result goes back', async () => {
@@ -284,4 +285,44 @@ test('11b. offeredNames is the union, deduplicated, tolerant of a missing read s
   assert.deepEqual(offeredNames(undefined, ['reveal_in_round']), ['reveal_in_round'], 'no read surface (reg.ok false) still offers the phase tool');
   assert.deepEqual(offeredNames([], []), []);
   assert.ok(!offeredNames(['read_ledger'], ['commit_to_round']).includes('partner_attest'));
+});
+
+test('12. one attach per page (t-3dcc): a second attachBridge is refused, records nothing, and leaves the first page\'s offered set untouched', async () => {
+  const w = world({ url: `http://localhost:5177/?bridge=${RELAY}&token=${TOKEN}`, tools: TOOLS });
+  const attachBridge = await load();
+  const room = await seedRoom('Room host');
+  const first = await attachBridge(room, { offered: (n) => n === 'read_ledger' });
+  assert.equal(first, RELAY);
+  const pushes = () => w.fetches.filter((f) => f.url === `${RELAY}/tools`).length;
+  const doors = () => room.ledger.entries.filter((e) => e.kind === 'bridge_opened').length;
+  const [p1, d1, s1] = [pushes(), doors(), w.streams.length];
+  const second = await attachBridge(room, { offered: () => true });
+  assert.equal(second, null, 'the second attach is refused');
+  assert.equal(pushes(), p1, 'no new push'); assert.equal(doors(), d1, 'no second door row'); assert.equal(w.streams.length, s1, 'no second stream');
+  // The first page's offered set still governs a call.
+  w.streams[0].onmessage({ data: JSON.stringify({ id: 1, name: 'commit_to_round', args: {} }) });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(w.executed.length, 0, 'commit_to_round was not offered by the FIRST attach and stays refused');
+  w.streams[0].onmessage({ data: JSON.stringify({ id: 2, name: 'read_ledger', args: {} }) });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(w.executed.length, 1, 'read_ledger, offered by the first attach, still runs');
+});
+
+test('13. t-089f on the page side: a relay that already serves another page refuses the push — no door row, no stream, the chip says refused (not "not reachable", not "reconnecting")', async () => {
+  const w = world({ url: `http://localhost:5177/?bridge=${RELAY}&token=${TOKEN}`, tools: TOOLS });
+  globalThis.fetch = async (u, init) => { w.fetches.push({ url: u, method: init?.method, headers: init?.headers ?? {} }); return { ok: false, status: 409, text: async () => 'a page is already attached to this bridge; one at a time' }; };
+  const chips = [];
+  globalThis.document.getElementById = (id) => (id === 'bridge-status' ? null : null);
+  globalThis.document.createElement = () => { const el = { dataset: {}, style: {} }; Object.defineProperty(el, 'textContent', { set(v) { chips.push(v); }, get() { return chips.at(-1); } }); return el; };
+  const attachBridge = await load();
+  const room = await seedRoom('Room host');
+  const before = room.ledger.entries.length;
+  const result = await attachBridge(room);
+  assert.equal(result, null);
+  assert.equal(room.ledger.entries.length, before, 'NO bridge_opened row for a door that will not open');
+  assert.equal(w.streams.length, 0, 'no stream opened');
+  assert.match(chips.at(-1), /refused — another page holds this bridge/);
+  assert.doesNotMatch(chips.at(-1), /not reachable|reconnecting/);
+  const push = w.fetches.find((f) => f.url === `${RELAY}/tools`);
+  assert.match(push.headers['x-bridge-page'], /^[0-9a-f]{32}$/, 'the push carried this page load\'s nonce');
 });

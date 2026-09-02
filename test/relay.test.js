@@ -197,3 +197,32 @@ test('a call with no page attached fails loudly and names the URL to open', asyn
   assert.match(res.content[0].text, /no page is attached/);
   assert.match(res.content[0].text, /\?bridge=http:\/\/127\.0\.0\.1:0&token=/, 'the operator is told exactly what to open');
 });
+
+test('t-089f: one page at a time on EVERY route — a second page is refused at its first push, so it can never record a door that will not open', async (t) => {
+  const { base, relay } = await boot(t, { firstListWaitMs: 100 });
+  const A = { ...H, 'x-bridge-page': 'a'.repeat(32) };
+  const B = { ...H, 'x-bridge-page': 'b'.repeat(32) };
+  // Page A pushes, then attaches.
+  assert.equal((await fetch(`${base}/tools`, { method: 'POST', headers: A, body: '{"tools":[{"name":"read_ledger"}]}' })).status, 204);
+  const ctrl = new AbortController();
+  const stream = await fetch(`${base}/events?token=${TOKEN}&page=${'a'.repeat(32)}`, { headers: { origin: PAGE }, signal: ctrl.signal });
+  assert.equal(stream.status, 200);
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(relay.state.pageId, 'a'.repeat(32));
+  // Page B: refused on /tools (the 1 Sept failure), on /events, and on /result.
+  const pushB = await fetch(`${base}/tools`, { method: 'POST', headers: B, body: '{"tools":[{"name":"x"}]}' });
+  assert.equal(pushB.status, 409);
+  assert.match(await pushB.text(), /one at a time/);
+  assert.deepEqual(relay.state.tools.map((x) => x.name), ['read_ledger'], 'B changed nothing');
+  assert.equal((await fetch(`${base}/events?token=${TOKEN}&page=${'b'.repeat(32)}`, { headers: { origin: PAGE } })).status, 409);
+  assert.equal((await fetch(`${base}/result`, { method: 'POST', headers: B, body: '{"id":1,"ok":true,"text":"x"}' })).status, 409);
+  // Page A itself keeps working, and /health stays open to everyone.
+  assert.equal((await fetch(`${base}/tools`, { method: 'POST', headers: A, body: '{"tools":[{"name":"read_ledger"},{"name":"current_phase"}]}' })).status, 204);
+  assert.equal((await fetch(`${base}/health`).then((r) => r.json())).pages, 1);
+  // A detaches: the slot and the nonce are freed; B may now attach.
+  ctrl.abort();
+  await stream.body?.cancel?.().catch(() => {});
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(relay.state.page, null); assert.equal(relay.state.pageId, null);
+  assert.equal((await fetch(`${base}/tools`, { method: 'POST', headers: B, body: '{"tools":[{"name":"x"}]}' })).status, 204);
+});

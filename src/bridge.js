@@ -73,11 +73,24 @@ export function schemaObject(s, warn = () => {}) {
 }
 
 let TOKEN = '';
-const authHeaders = () => ({ 'content-type': 'application/json', 'x-bridge-token': TOKEN });
+// This page load's nonce (t-089f). The relay serves one page at a time and
+// refuses anything from another nonce on EVERY route, so a second tab is told
+// "no" at its first push — before it could record a door that never opens.
+const PAGE = mintPageId();
+const authHeaders = () => ({ 'content-type': 'application/json', 'x-bridge-token': TOKEN, 'x-bridge-page': PAGE });
+
+function mintPageId() {
+  const c = globalThis.crypto;
+  if (c?.randomUUID) return c.randomUUID().replace(/-/g, '');
+  return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+}
+
+export class BridgeRefused extends Error {}
 
 async function pushTools(relay) {
   const tools = await currentTools();
   const r = await fetch(`${relay}/tools`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ tools }) });
+  if (r.status === 409) throw new BridgeRefused('another page holds this bridge — close it, or open a fresh relay');
   if (!r.ok) throw new Error(`relay refused the tool list (${r.status})`);
   return tools;
 }
@@ -107,7 +120,15 @@ async function runCall(relay, { id, name, args }) {
 /** Attach the page to a local relay if `?bridge=` names one. Returns the relay
  *  origin when attached, null when not asked, and records the opening on the
  *  chain so the ledger says a door was opened and to what. */
+// One attach per page load. A second call would overwrite OFFERED and the
+// stream (t-3dcc, Hermes seq 1809): refused, loudly, never merged.
+let ATTACHED = null;
+
 export async function attachBridge(room, { offered = null } = {}) {
+  if (ATTACHED) {
+    chip(`bridge: already attached to ${ATTACHED} — a second attach is refused`, 'absent');
+    return null;
+  }
   OFFERED = typeof offered === 'function' ? offered : null;
   const params = new URL(location.href).searchParams;
   const relay = params.get('bridge');
@@ -137,7 +158,10 @@ export async function attachBridge(room, { offered = null } = {}) {
   // can ever arrive ahead of the record of the door it came through.
   let tools = [];
   try { tools = await pushTools(relay); } catch (err) {
-    chip(`bridge: relay at ${relay} not reachable — ${err?.message ?? err}`, 'absent');
+    // A refusal is not a missing relay: the relay is there and serving another
+    // page. Say so, record nothing — no door row for a door that will not open.
+    if (err instanceof BridgeRefused) chip(`bridge: refused — ${err.message}`, 'absent');
+    else chip(`bridge: relay at ${relay} not reachable — ${err?.message ?? err}`, 'absent');
     return null;
   }
 
@@ -159,7 +183,8 @@ export async function attachBridge(room, { offered = null } = {}) {
   // for this one request; the relay accepts either form. The second spike run
   // opened this bare, got a 401, and sat in a reconnect loop with the chip
   // reading "lost — reconnecting" while the relay showed no page attached.
-  const es = new EventSource(`${relay}/events?token=${encodeURIComponent(TOKEN)}`);
+  ATTACHED = relay;
+  const es = new EventSource(`${relay}/events?token=${encodeURIComponent(TOKEN)}&page=${PAGE}`);
   // Re-offer the tools every time the stream (re)opens: a relay that restarted
   // — GLM's runner spawns it, so a runner restart is a relay restart — comes
   // back with an empty list, and a page that only pushed once would leave the
@@ -168,7 +193,13 @@ export async function attachBridge(room, { offered = null } = {}) {
     chip(`bridge: open to ${relay} — ${tools.length} tools offered`, 'ready');
     pushAndCount();
   };
-  es.onerror = () => chip(`bridge: lost ${relay} — reconnecting`, 'absent');
+  // An EventSource that the relay answered with a non-200 (409, 401) is CLOSED
+  // for good — it does not retry — so "reconnecting" would be a lie there.
+  // Only a dropped connection reconnects.
+  es.onerror = () => {
+    const closed = es.readyState === (globalThis.EventSource?.CLOSED ?? 2);
+    chip(closed ? `bridge: refused by ${relay} — the relay closed the stream; reload once` : `bridge: lost ${relay} — reconnecting`, 'absent');
+  };
   es.onmessage = (ev) => {
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
     if (msg && msg.id && msg.name) runCall(relay, msg).catch(() => {});

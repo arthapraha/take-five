@@ -54,6 +54,15 @@ export function normaliseSchema(s, warn = () => {}) {
   return { type: 'object', properties: {} };
 }
 
+/** The page's per-load nonce: a header on the POSTs, the query on /events
+ *  (EventSource cannot set a header). Null when a client sends none. */
+export function presentedPage(req, url) {
+  const header = req.headers['x-bridge-page'];
+  if (typeof header === 'string' && header) return header;
+  if (url.pathname === '/events') return url.searchParams.get('page') || null;
+  return null;
+}
+
 /** Where the token may be presented for a given route. */
 export function presentedToken(req, url) {
   const header = req.headers['x-bridge-token'];
@@ -85,6 +94,7 @@ export function createRelay({ pageOrigin, token = mintToken(), port = 7340, log 
   const state = {
     tools: [],          // last list the page pushed: [{name, description, inputSchema}]
     page: null,         // the single attached SSE response, or null
+    pageId: null,       // the attached page's per-load nonce (t-089f), or null
     pending: new Map(), // callId -> {resolve, reject, timer}
     nextId: 1,
     onToolsChanged: null,
@@ -150,14 +160,27 @@ export function createRelay({ pageOrigin, token = mintToken(), port = 7340, log 
     // Everything below drives or observes the room: token required.
     if (!tokenMatches(presentedToken(req, url), token)) { res.writeHead(401); return res.end('bridge token missing or wrong'); }
 
+    // ONE page at a time, enforced on EVERY route, not only the stream (t-089f).
+    // On 1 Sept a second page pushed its tools (accepted), recorded bridge_opened
+    // on its chain, and was then refused the stream — a door row for a door that
+    // never opened. Each page load carries a nonce; while a page is attached,
+    // anything from a different nonce is refused before it can change state.
+    const pageId = presentedPage(req, url);
+    const foreign = state.page && pageId !== state.pageId;
+    if (foreign && url.pathname !== '/health') {
+      res.writeHead(409, { 'content-type': 'text/plain' });
+      return res.end('a page is already attached to this bridge; one at a time');
+    }
+
     if (req.method === 'GET' && url.pathname === '/events') {
       if (state.page) { res.writeHead(409, { 'content-type': 'text/plain' }); return res.end('a page is already attached to this bridge; one at a time'); }
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
       res.write(': attached\n\n');
       state.page = res;
-      log(`page attached from ${origin}`);
+      state.pageId = pageId;
+      log(`page attached from ${origin}${pageId ? ` (page ${pageId.slice(0, 8)})` : ''}`);
       const ping = setInterval(() => res.write(': ping\n\n'), 20_000);
-      req.on('close', () => { clearInterval(ping); if (state.page === res) state.page = null; log('page detached'); });
+      req.on('close', () => { clearInterval(ping); if (state.page === res) { state.page = null; state.pageId = null; } log('page detached'); });
       return;
     }
     if (req.method === 'POST' && url.pathname === '/tools') {
