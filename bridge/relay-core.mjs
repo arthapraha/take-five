@@ -133,7 +133,13 @@ export function createRelay({ pageOrigin, token = mintToken(), port = 7340, log 
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     // The token rides a custom header on POSTs; the preflight must name it or
     // the browser refuses the request before it leaves (spike run 1).
-    res.setHeader('Access-Control-Allow-Headers', 'content-type, x-bridge-token');
+    res.setHeader('Access-Control-Allow-Headers', 'content-type, x-bridge-token, x-bridge-page');
+    // A PUBLIC https page reaching a LOOPBACK relay is a private-network
+    // request. Chrome's Private Network Access sends a preflight and expects
+    // this header before it lets the request through (with the user's
+    // permission, where it prompts). Without it the page's push never leaves
+    // the browser. Only ever true for the one origin we serve.
+    if (reqOrigin === origin) res.setHeader('Access-Control-Allow-Private-Network', 'true');
     return allowed;
   }
 

@@ -226,3 +226,17 @@ test('t-089f: one page at a time on EVERY route — a second page is refused at 
   assert.equal(relay.state.page, null); assert.equal(relay.state.pageId, null);
   assert.equal((await fetch(`${base}/tools`, { method: 'POST', headers: B, body: '{"tools":[{"name":"x"}]}' })).status, 204);
 });
+
+test('a public https page reaching the loopback relay is a private-network request: the preflight for OUR origin carries Access-Control-Allow-Private-Network, a foreign one does not', async (t) => {
+  // 2 Sept 08:5x UK: the branch preview (https) could not push to 127.0.0.1 from
+  // the Browser pane; whatever the pane's own policy, real Chrome applies Private
+  // Network Access and needs this header on the preflight.
+  const { base } = await boot(t);
+  const ours = await fetch(`${base}/tools`, { method: 'OPTIONS', headers: { origin: PAGE, 'access-control-request-private-network': 'true' } });
+  assert.equal(ours.status, 204);
+  assert.equal(ours.headers.get('access-control-allow-private-network'), 'true');
+  assert.match(ours.headers.get('access-control-allow-headers'), /x-bridge-page/, 'and the page nonce header is allowed');
+  const foreign = await fetch(`${base}/tools`, { method: 'OPTIONS', headers: { origin: 'https://evil.example', 'access-control-request-private-network': 'true' } });
+  assert.equal(foreign.status, 403);
+  assert.equal(foreign.headers.get('access-control-allow-private-network'), null, 'never granted to an origin we do not serve');
+});
