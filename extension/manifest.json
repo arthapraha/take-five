@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Take Five Sidecar (demo)",
+  "version": "0.1.0",
+  "description": "A demo side panel: type a prompt, a LOCAL agent outside the browser calls the tools a Take Five page publishes through WebMCP, and the call lands on the page's chain. Our own panel — not a vendor's extension.",
+  "action": { "default_title": "Open Take Five Sidecar" },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "permissions": ["sidePanel", "storage"],
+  "background": { "service_worker": "background.js" }
+}
