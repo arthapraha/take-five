@@ -7,14 +7,13 @@
 </head>
 <body>
   <header>
-    <h1>Take Five Agent</h1>
     <p class="who" id="who">agent: not connected</p>
     <p class="note">Our own panel. The agent runs <strong>outside the browser</strong>; each call crosses a local bridge into the page's own WebMCP tools and is recorded on the page's chain as <code>tool:&lt;name&gt;</code>, client-asserted.</p>
-    <p class="origin">this panel's origin: <code id="origin"></code> — start the local agent process with <code>--extension-origin</code> set to exactly that</p>
   </header>
 
   <details id="settings">
     <summary>Connection</summary>
+    <p class="origin">this panel's origin: <code id="origin"></code> — start the local agent process with <code>--extension-origin</code> set to exactly that</p>
     <label>Endpoint <input id="endpoint" value="http://127.0.0.1:7350" spellcheck="false"></label>
     <label>Token <input id="token" placeholder="paste the token the local agent printed" spellcheck="false"></label>
     <button id="connect" type="button">Connect</button>
