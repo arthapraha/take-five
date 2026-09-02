@@ -11,7 +11,7 @@
 // It never replaces a real implementation: in a browser that ships WebMCP, the
 // native `document.modelContext` wins and this is a no-op.
 import { initializeWebMCPPolyfill } from '@mcp-b/webmcp-polyfill';
-import { seedRoom, PHASES, INGRESS, GRADE_NOTE, QUESTION } from './room.js';
+import { seedRoom, PHASES, INGRESS, GRADE_NOTE, QUESTION, offeredNames } from './room.js';
 import { registerReadSurface, registerPhaseTools, registerPartnerSurface, PARTNER_ORIGIN } from './tools.js';
 import { Round } from './round.js';
 import { attachBridge } from './bridge.js';
@@ -285,7 +285,14 @@ await syncPhaseTools();
 // t-bc1b: opt-in local agent bridge. A no-op without ?bridge=; with it, an
 // MCP client outside the browser can call the tools this page publishes,
 // through executeTool, so every call lands as a tool:<name> row like any other.
-await attachBridge(room);
+// Only the PHASE tools are offered through the bridge — the ones the page's own
+// "tools the agent can see now" panel lists. `partner_attest` is registered for
+// the partner origin and must never be callable by an outside agent (it would
+// land an `inherited` attestation with no partner behind it).
+// Offered = the read surface (registered once, above) + the current phase tools —
+// exactly what the "tools the agent can see now" panel lists. First cut used the
+// phase list alone and offered the agent ONE tool (found live 08:15 UK).
+await attachBridge(room, { offered: (name) => offeredNames(reg.names, phaseTools.names).includes(name) });
 
 // The cross-org line. `exposedTo` needs native WebMCP; the polyfill refuses it.
 // Whichever way it goes, the page SAYS which — a demo that quietly degraded

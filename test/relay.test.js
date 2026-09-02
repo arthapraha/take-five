@@ -7,7 +7,37 @@
 // future change to the boundary fails a test instead of shipping quietly.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createRelay, tokenMatches, presentedToken } from '../bridge/relay-core.mjs';
+import { createRelay, tokenMatches, presentedToken, normaliseSchema } from '../bridge/relay-core.mjs';
+
+test('a schema pushed as a JSON string (native Chrome 152) is listed as an object; junk becomes the empty object schema', async (t) => {
+  // Live 2 Sept 06:52Z: the owner's native Chrome pushed five of seven schemas as
+  // strings; the MCP client rejected tools/list and the sidecar process died.
+  const schema = { type: 'object', properties: { limit: { type: 'integer' } } };
+  assert.deepEqual(normaliseSchema(JSON.stringify(schema)), schema);
+  assert.deepEqual(normaliseSchema(schema), schema);
+  for (const junk of ['not json', '[1,2]', 42, null, undefined, [1]]) assert.deepEqual(normaliseSchema(junk), { type: 'object', properties: {} });
+  // The fallback is LOUD (counsel seq 1776): junk warns, an absent schema (a
+  // tool that takes nothing) does not, and a parseable string never does.
+  const warned = [];
+  normaliseSchema('not json', (m) => warned.push(m));
+  normaliseSchema(42, (m) => warned.push(m));
+  normaliseSchema(undefined, (m) => warned.push(m));
+  normaliseSchema(JSON.stringify(schema), (m) => warned.push(m));
+  assert.equal(warned.length, 2);
+  assert.match(warned[0], /NO parameters/);
+  const logs = [];
+  const { base, relay } = await boot(t, { firstListWaitMs: 100, log: (m) => logs.push(m) });
+  await fetch(`${base}/tools`, { method: 'POST', headers: H, body: JSON.stringify({ tools: [
+    { name: 'read_ledger', inputSchema: JSON.stringify(schema) },
+    { name: 'current_phase', inputSchema: { type: 'object', properties: {} } },
+    { name: 'odd', inputSchema: 'nope' },
+  ] }) });
+  const { tools } = await relay.mcpHandlers.listTools();
+  assert.deepEqual(tools.map((x) => x.inputSchema), [schema, { type: 'object', properties: {} }, { type: 'object', properties: {} }]);
+  for (const x of tools) assert.equal(typeof x.inputSchema, 'object', 'an MCP client validates this strictly');
+  assert.ok(logs.some((m) => /tool "odd": inputSchema unusable/.test(m)), 'the relay log names the tool whose schema it could not use');
+  assert.ok(!logs.some((m) => /tool "read_ledger": inputSchema unusable/.test(m)), 'a parseable string is the normal path, not a warning');
+});
 
 const PAGE = 'http://localhost:5177';
 const TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';

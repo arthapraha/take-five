@@ -150,3 +150,14 @@ export async function seedRoom(hostName) {
   await room.advance('Commit');
   return room;
 }
+
+/** The tools the page offers an agent RIGHT NOW: the always-on read surface plus
+ *  the current phase's tools — exactly what the "tools the agent can see now"
+ *  panel lists, and exactly what the local bridge may expose. Pure, so a node
+ *  test can pin it: on 2 Sept 2026 the bridge's first offered-filter used the
+ *  phase list alone and offered an agent ONE tool (take-five seq 1797–1804).
+ *  Never includes anything registered for another origin (`partner_attest`),
+ *  because neither input does. */
+export function offeredNames(readNames, phaseNames) {
+  return [...new Set([...(readNames ?? []), ...(phaseNames ?? [])])];
+}

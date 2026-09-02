@@ -7,3 +7,6 @@ dist/
 .wrangler/
 .netlify/
 .gstack/
+
+# Machine-local tooling state (Claude Code launch config); never publish.
+.claude/

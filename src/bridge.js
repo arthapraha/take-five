@@ -37,11 +37,39 @@ function chip(text, state) {
   el.textContent = text;
 }
 
+// Which of the page's registered tools the bridge may offer. The page decides
+// (see attachBridge's `offered`), because `getTools()` returns EVERYTHING the
+// page registered — including `partner_attest`, which exists for the partner
+// ORIGIN (registered with `exposedTo`) and lands an `inherited` row "recorded
+// verbatim from <partner origin>". Offered through the bridge, an outside agent
+// could land that row with no partner behind it — a lie the chain would carry.
+// Found 2 Sept 08:0x UK when the relay served 7 tools and the page's panel
+// listed 6 (counsel, take-five seq 1787). Without a predicate nothing is
+// excluded, which is the old behaviour and the tests' default.
+let OFFERED = null;
+const isOffered = (name) => !OFFERED || OFFERED(name);
+
 async function currentTools() {
   const mc = document.modelContext;
   if (!mc || typeof mc.getTools !== 'function') return [];
   const list = await mc.getTools();
-  return list.map((t) => ({ name: t.name, description: t.description ?? '', inputSchema: t.inputSchema ?? { type: 'object', properties: {} } }));
+  return list
+    .filter((t) => isOffered(t.name))
+    .map((t) => ({ name: t.name, description: t.description ?? '', inputSchema: schemaObject(t.inputSchema, (msg) => console.warn(`[bridge] tool "${t.name}": ${msg}`)) }));
+}
+
+/** Native Chrome 152 returns `inputSchema` from `getTools()` as a JSON STRING;
+ *  the polyfill returns an object. The relay's client validates tools/list
+ *  strictly, so send an object always (the relay normalises too — belt and
+ *  braces, because the page is the source). Seen live on the owner's Chrome,
+ *  2 Sept 06:52Z. */
+export function schemaObject(s, warn = () => {}) {
+  const raw = s;
+  if (typeof s === 'string') { try { s = JSON.parse(s); } catch { s = null; } }
+  if (s && typeof s === 'object' && !Array.isArray(s)) return s;
+  // Loud, never silent: an empty schema tells the model "no parameters".
+  if (raw !== undefined && raw !== null) warn(`inputSchema unusable (${typeof raw === 'string' ? 'unparseable string' : typeof raw}); sending the empty object schema — the model will see NO parameters`);
+  return { type: 'object', properties: {} };
 }
 
 let TOKEN = '';
@@ -58,6 +86,9 @@ async function runCall(relay, { id, name, args }) {
   const mc = document.modelContext;
   let ok = false; let text = ''; let error = null;
   try {
+    // Refused BEFORE the page's registry is consulted: a tool the page did not
+    // offer through the bridge is not callable through it, whatever is registered.
+    if (!isOffered(name)) throw new Error(`"${name}" is not offered through the bridge`);
     const tools = await mc.getTools();
     const tool = tools.find((t) => t.name === name);
     if (!tool) throw new Error(`no tool "${name}" in this phase`);
@@ -76,7 +107,8 @@ async function runCall(relay, { id, name, args }) {
 /** Attach the page to a local relay if `?bridge=` names one. Returns the relay
  *  origin when attached, null when not asked, and records the opening on the
  *  chain so the ledger says a door was opened and to what. */
-export async function attachBridge(room) {
+export async function attachBridge(room, { offered = null } = {}) {
+  OFFERED = typeof offered === 'function' ? offered : null;
   const params = new URL(location.href).searchParams;
   const relay = params.get('bridge');
   if (!relay) return null;
@@ -118,7 +150,10 @@ export async function attachBridge(room) {
     ingress: 'room',
   });
 
-  try { mc.addEventListener('toolchange', () => { pushTools(relay).catch(() => {}); }); } catch {}
+  // The chip counts what is offered NOW, re-counted on every push — the number
+  // on screen and the number in the agent's hands must be the same number.
+  const pushAndCount = () => pushTools(relay).then((t) => { tools = t; chip(`bridge: open to ${relay} — ${t.length} tools offered`, 'ready'); }).catch(() => {});
+  try { mc.addEventListener('toolchange', pushAndCount); } catch {}
 
   // EventSource cannot carry a header, so the token rides the query string
   // for this one request; the relay accepts either form. The second spike run
@@ -131,7 +166,7 @@ export async function attachBridge(room) {
   // agent seeing nothing until the next phase change.
   es.onopen = () => {
     chip(`bridge: open to ${relay} — ${tools.length} tools offered`, 'ready');
-    pushTools(relay).catch(() => {});
+    pushAndCount();
   };
   es.onerror = () => chip(`bridge: lost ${relay} — reconnecting`, 'absent');
   es.onmessage = (ev) => {

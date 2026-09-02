@@ -36,6 +36,24 @@ export function tokenMatches(presented, expected) {
   return timingSafeEqual(a, b);
 }
 
+/** A tool's input schema as an OBJECT, whatever the page sent. Native Chrome
+ *  152's `getTools()` hands schemas back as JSON strings (seen live 2 Sept
+ *  06:52Z on the owner's Chrome — five of seven tools); the polyfill hands
+ *  objects. An MCP client validates `tools/list` strictly, so a string here
+ *  broke the sidecar's client outright. Parse strings; anything unusable
+ *  becomes the empty object schema — honest ("takes what it takes") and never
+ *  a lie about a parameter. */
+export function normaliseSchema(s, warn = () => {}) {
+  const raw = s;
+  if (typeof s === 'string') { try { s = JSON.parse(s); } catch { s = null; } }
+  if (s && typeof s === 'object' && !Array.isArray(s)) return s;
+  // Loud, never silent (counsel, take-five seq 1776): an empty schema tells the
+  // model the tool takes no parameters, which would make a parameterised tool
+  // quietly uncallable. The operator must see this happen.
+  if (raw !== undefined && raw !== null) warn(`inputSchema unusable (${typeof raw === 'string' ? `unparseable string: ${raw.slice(0, 60)}` : typeof raw}); falling back to the empty object schema — the model will see NO parameters`);
+  return { type: 'object', properties: {} };
+}
+
 /** Where the token may be presented for a given route. */
 export function presentedToken(req, url) {
   const header = req.headers['x-bridge-token'];
@@ -145,7 +163,7 @@ export function createRelay({ pageOrigin, token = mintToken(), port = 7340, log 
     if (req.method === 'POST' && url.pathname === '/tools') {
       const body = await readJSON(req).catch(() => null);
       if (!body || !Array.isArray(body.tools)) { res.writeHead(400); return res.end('expected {tools: [...]}'); }
-      state.tools = body.tools.map((t) => ({ name: String(t.name), description: String(t.description ?? ''), inputSchema: t.inputSchema ?? { type: 'object', properties: {} } }));
+      state.tools = body.tools.map((t) => ({ name: String(t.name), description: String(t.description ?? ''), inputSchema: normaliseSchema(t.inputSchema, (msg) => log(`tool "${t.name}": ${msg}`)) }));
       log(`tool list from page: ${state.tools.map((t) => t.name).join(', ') || '(none)'}`);
       if (!state.everPushed) { state.everPushed = true; firstPush(); }
       try { await state.onToolsChanged?.(); } catch {}

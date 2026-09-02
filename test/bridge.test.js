@@ -13,7 +13,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { seedRoom } from '../src/room.js';
+import { seedRoom, offeredNames } from '../src/room.js';
 
 const RELAY = 'http://127.0.0.1:7341';
 const TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
@@ -173,4 +173,115 @@ test('6. a bridged call is recorded through the webmcp door with no UI fingerpri
   assert.equal(entry.actor.ingress, 'webmcp');
   assert.equal(entry.actor.grade, 'client-asserted', 'a bridged call is the page\'s claim about a door, never server-observed');
   assert.equal(entry.payload.confirmation, undefined, 'no dialog was resolved, so no fingerprint may be claimed');
+});
+
+test('9. a schema the browser hands over as a JSON string (native Chrome 152) is pushed to the relay as an object', async () => {
+  // Live 2 Sept 06:52Z: the owner's native Chrome returned string schemas from
+  // getTools(); the relay's MCP client rejected tools/list and the sidecar died.
+  const schema = { type: 'object', properties: { limit: { type: 'number' } } };
+  const w = world({ url: `http://localhost:5177/?bridge=${RELAY}&token=${TOKEN}`, tools: [
+    { name: 'read_ledger', inputSchema: JSON.stringify(schema) },
+    { name: 'current_phase', inputSchema: { type: 'object', properties: {} } },
+    { name: 'odd', inputSchema: 'not json' },
+  ] });
+  const attachBridge = await load();
+  await attachBridge(await seedRoom('Room host'));
+  const push = w.fetches.find((f) => f.url === `${RELAY}/tools`);
+  assert.ok(push, 'the tool list was pushed');
+  assert.deepEqual(push.body.tools.map((t) => t.inputSchema), [schema, { type: 'object', properties: {} }, { type: 'object', properties: {} }]);
+});
+
+test('9b. the shim warns loudly when it cannot use a schema, and stays quiet for a parseable one', async () => {
+  const { schemaObject } = await import(`../src/bridge.js?t=${Date.now()}x`);
+  const warned = [];
+  assert.deepEqual(schemaObject('{"type":"object","properties":{"a":{}}}', (m) => warned.push(m)), { type: 'object', properties: { a: {} } });
+  assert.deepEqual(schemaObject('nope', (m) => warned.push(m)), { type: 'object', properties: {} });
+  assert.deepEqual(schemaObject(undefined, (m) => warned.push(m)), { type: 'object', properties: {} });
+  assert.equal(warned.length, 1);
+  assert.match(warned[0], /NO parameters/);
+});
+
+test('10. only the tools the page OFFERS cross the bridge: partner_attest is neither listed nor callable, even though it is registered', async () => {
+  // 2 Sept 08:0x UK: the relay served 7 tools while the page's panel listed 6.
+  // The seventh was partner_attest — the partner ORIGIN's tool — and through the
+  // bridge an outside agent could have landed an `inherited` attestation row
+  // with no partner behind it. The page now says what is offered.
+  const w = world({ url: `http://localhost:5177/?bridge=${RELAY}&token=${TOKEN}`, tools: [
+    ...TOOLS,
+    { name: 'partner_attest', description: 'Partner attestation', inputSchema: { type: 'object', properties: { claim: { type: 'string' } } } },
+  ] });
+  const attachBridge = await load();
+  const phase = new Set(TOOLS.map((t) => t.name));
+  const room = await seedRoom('Room host');
+  await attachBridge(room, { offered: (name) => phase.has(name) });
+  const push = w.fetches.find((f) => f.url === `${RELAY}/tools`);
+  assert.deepEqual(push.body.tools.map((t) => t.name), ['read_ledger', 'commit_to_round'], 'the list pushed to the relay is exactly what the page offers');
+  const door = room.ledger.entries.find((e) => e.kind === 'bridge_opened');
+  assert.deepEqual(door.payload.tools, ['read_ledger', 'commit_to_round'], 'and the door row says the same');
+  // A relay that somehow asked anyway is refused before the page's registry is touched.
+  const stream = w.streams[0];
+  const before = w.fetches.length;
+  stream.onmessage({ data: JSON.stringify({ id: 7, name: 'partner_attest', args: { claim: 'the partner said so' } }) });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(w.executed.length, 0, 'executeTool was never called');
+  const result = w.fetches.slice(before).find((f) => f.url === `${RELAY}/result`);
+  assert.equal(result.body.ok, false);
+  assert.match(result.body.error, /not offered through the bridge/);
+  assert.ok(!room.ledger.entries.some((e) => e.kind === 'partner_attestation'), 'no attestation row landed');
+});
+
+test('11. REGRESSION (counsel 1802, Hermes 1799): the offered set equals the panel\'s set — read surface + phase tool — in Commit AND after Advance to Reveal; partner_attest never', async () => {
+  // 08:15 UK: the first offered-filter used the phase list alone and offered ONE
+  // tool; GLM refused honestly. This test registers the REAL surfaces through
+  // a fake modelContext and mirrors main.js's predicate exactly.
+  const { registerReadSurface, registerPhaseTools, partnerTool } = await import('../src/tools.js');
+  const { Round } = await import('../src/round.js');
+  const w = world({ url: `http://localhost:5177/?bridge=${RELAY}&token=${TOKEN}` });
+  const registry = new Map();
+  const listeners = [];
+  globalThis.document.modelContext = {
+    registerTool: async (tool, { signal } = {}) => {
+      registry.set(tool.name, tool);
+      signal?.addEventListener('abort', () => registry.delete(tool.name));
+    },
+    getTools: async () => [...registry.values()],
+    executeTool: async () => 'ok',
+    addEventListener: (type, fn) => { if (type === 'toolchange') listeners.push(fn); },
+  };
+  const room = await seedRoom('Room host');
+  const round = new Round('q');
+  const reg = await registerReadSurface(room, { onCall() {} });
+  let phaseTools = await registerPhaseTools(room, round, room.phase, {});
+  await globalThis.document.modelContext.registerTool(partnerTool(room), {});
+  assert.ok(registry.has('partner_attest'), 'the partner tool IS registered on the page');
+  const attachBridge = await load();
+  await attachBridge(room, { offered: (name) => offeredNames(reg.names, phaseTools.names).includes(name) });
+
+  const pushed = () => w.fetches.filter((f) => f.url === `${RELAY}/tools`).at(-1).body.tools.map((t) => t.name).sort();
+  const panel = () => offeredNames(reg.names, phaseTools.names).sort();
+  assert.equal(room.phase, 'Commit');
+  assert.deepEqual(pushed(), panel(), 'Commit: offered = the panel\'s set');
+  assert.equal(pushed().length, 6);
+  assert.ok(pushed().includes('read_ledger') && pushed().includes('commit_to_round'));
+  assert.ok(!pushed().includes('partner_attest'));
+
+  // Advance to Reveal exactly as main.js does, then the toolchange re-push.
+  phaseTools.controller.abort();
+  await room.advance('Reveal');
+  phaseTools = await registerPhaseTools(room, round, room.phase, {});
+  for (const fn of listeners) fn();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(room.phase, 'Reveal');
+  assert.deepEqual(pushed(), panel(), 'Reveal: offered = the panel\'s set');
+  assert.ok(pushed().includes('reveal_in_round'), 'the Reveal tool is offered');
+  assert.ok(!pushed().includes('commit_to_round'), 'the Commit tool is gone');
+  assert.ok(!pushed().includes('partner_attest'), 'and the partner tool never appears');
+});
+
+test('11b. offeredNames is the union, deduplicated, tolerant of a missing read surface, and adds nothing of its own', () => {
+  assert.deepEqual(offeredNames(['read_ledger', 'current_phase'], ['commit_to_round']), ['read_ledger', 'current_phase', 'commit_to_round']);
+  assert.deepEqual(offeredNames(['a', 'b'], ['b']), ['a', 'b']);
+  assert.deepEqual(offeredNames(undefined, ['reveal_in_round']), ['reveal_in_round'], 'no read surface (reg.ok false) still offers the phase tool');
+  assert.deepEqual(offeredNames([], []), []);
+  assert.ok(!offeredNames(['read_ledger'], ['commit_to_round']).includes('partner_attest'));
 });
