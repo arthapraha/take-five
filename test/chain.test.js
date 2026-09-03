@@ -158,17 +158,32 @@ test('subscribers hear each entry once, in order, after it is on the chain', asy
   off();
   await l.append({ kind: 'act', actor });
   assert.equal(seen.length, 2, 'unsubscribed listeners hear nothing more');
+  // A subscriber added late hears only what lands after it — never a replay.
+  const late = [];
+  l.subscribe((e) => late.push(e.seq));
+  await l.append({ kind: 'act', actor });
+  assert.deepEqual(late, [4], 'no replay of earlier entries');
+  // The same function subscribed twice is one subscriber (Set semantics).
+  const twice = [];
+  const fn = (e) => twice.push(e.seq);
+  l.subscribe(fn); l.subscribe(fn);
+  await l.append({ kind: 'act', actor });
+  assert.deepEqual(twice, [5], 'deduplicated: one call per entry');
 });
 
 test('a subscriber that throws does not break the append or the chain', async () => {
   const l = new Ledger();
   l.subscribe(() => { throw new Error('painter crashed'); });
+  const warned = [];
+  const origWarn = console.warn; console.warn = (m) => warned.push(String(m));
   const heard = [];
   l.subscribe((e) => heard.push(e.seq));
   const e = await l.append({ kind: 'act', actor });
   assert.equal(e.seq, 1);
   assert.equal(l.length, 1);
   assert.deepEqual(heard, [1], 'later subscribers still run');
+  console.warn = origWarn;
+  assert.match(warned[0] ?? '', /subscriber failed on entry #1: painter crashed/, 'loud, not silent');
   assert.equal((await l.verify()).ok, true);
   assert.throws(() => l.subscribe('not a function'), /subscribe needs a function/);
 });
