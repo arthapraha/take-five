@@ -143,6 +143,12 @@ async function syncPhaseTools() {
   renderTools();
 }
 
+// Every appended row repaints the chain, whichever door it came through. The
+// explicit renderAll() calls below still run (they also redraw tools, seats and
+// phases); this is the one that guarantees a row is never recorded-but-unpainted
+// (t-6991: the declined ratification's row).
+room.ledger.subscribe(() => renderLedger());
+
 async function recordToolCall(name) {
   // A tool call is itself an act, recorded like any other — through the WebMCP
   // door, so the grade is client-asserted and the record says so.
