@@ -25,3 +25,8 @@ button:disabled { opacity: .5; cursor: default; }
 .row.final { border-color: var(--ok); }
 .row pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; }
 form { display: flex; flex-direction: column; gap: 6px; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 8px 0; }
+.buttons { display: flex; gap: 6px; margin-top: 4px; }
+button.quiet { background: transparent; color: var(--dim); border: 1px solid var(--line); }
+#bridge[data-state="ready"] { color: var(--ok); }
+#bridge[data-state="checking"] { color: var(--warn); }

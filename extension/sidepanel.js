@@ -2,8 +2,11 @@
 // never reads the page (Hermes gate, take-five seq 1735). Its only view of the
 // room is what the local sidecar returns: which agent answered, which tools
 // were called, what came back.
+import { createBridgeClient } from './bridge-client.js';
+
 const $ = (id) => document.getElementById(id);
 const endpointEl = $('endpoint'); const tokenEl = $('token'); const who = $('who');
+const relayEl = $('relay'); const relayTokenEl = $('relay-token'); const bridgeEl = $('bridge');
 const transcript = $('transcript'); const promptEl = $('prompt'); const sendBtn = $('send');
 let agent = null;
 // The sidecar answers exactly one extension origin; show ours so the owner can
@@ -12,9 +15,11 @@ $('origin').textContent = `chrome-extension://${chrome.runtime.id}`;
 
 async function restore() {
   try {
-    const { endpoint, token } = await chrome.storage.local.get(['endpoint', 'token']);
+    const { endpoint, token, relay, relayToken } = await chrome.storage.local.get(['endpoint', 'token', 'relay', 'relayToken']);
     if (endpoint) endpointEl.value = endpoint;
     if (token) tokenEl.value = token;
+    if (relay) relayEl.value = relay;
+    if (relayToken) relayTokenEl.value = relayToken;
     if (endpoint && token) await connect();
   } catch {}
 }
@@ -53,6 +58,54 @@ async function connect() {
 }
 
 $('connect').addEventListener('click', connect);
+
+// ── The bridge into the page (t-4202) ────────────────────────────────────
+// Two permissions, each with its reason: `activeTab` — the tab the owner
+// clicked the extension icon on, and no other, for as long as it stays on that
+// page; `scripting` — to inject the page side into exactly that tab, exactly
+// when Attach is clicked. No `tabs`, no `<all_urls>`, no host_permissions: the
+// relay is reached from this panel page over ordinary CORS, as t-70a1 measured
+// for the local agent (counsel, seq 2118: measure before widening).
+let bridge = null; let bridgePort = null;
+function bridgeStatus({ state, text }) { bridgeEl.dataset.state = state; bridgeEl.textContent = text; }
+function dropBridge(reason) {
+  if (bridge) bridge.close(reason);
+  try { bridgePort?.disconnect(); } catch {}
+  bridge = null; bridgePort = null;
+}
+async function attachTab() {
+  dropBridge('re-attaching');
+  let tab;
+  try {
+    [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) throw new Error('no active tab');
+    // The isolated pipe first, then the MAIN-world endpoint; the port is opened
+    // only once both are in place, so the first hello finds a listener.
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['page-relay.js'] });
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', files: ['page-endpoint.js'] });
+  } catch (err) {
+    bridgeStatus({ state: 'absent', text: `bridge: cannot attach — ${err?.message ?? err}. Click the Take Five Agent icon on that tab first (that grants this one tab), then Attach` });
+    return;
+  }
+  bridgePort = chrome.tabs.connect(tab.id, { name: 'take-five-bridge' });
+  try {
+    bridge = createBridgeClient({ relay: relayEl.value, token: relayTokenEl.value, label: tab.title || tab.url || 'this tab', toPage: (m) => bridgePort?.postMessage(m), onStatus: bridgeStatus });
+  } catch (err) {
+    bridgeStatus({ state: 'absent', text: `bridge: ${err.message}` });
+    dropBridge('not started');
+    return;
+  }
+  const mine = bridge;
+  bridgePort.onMessage.addListener((m) => { if (bridge === mine) mine.fromPage(m); });
+  bridgePort.onDisconnect.addListener(() => { if (bridge === mine) dropBridge('the page navigated or closed'); });
+  await chrome.storage.local.set({ relay: relayEl.value.trim(), relayToken: relayTokenEl.value.trim() });
+  try { await mine.start(); } catch (err) {
+    bridgeStatus({ state: 'absent', text: `bridge: ${err.message}` });
+    if (bridge === mine) dropBridge('not started');
+  }
+}
+$('attach').addEventListener('click', attachTab);
+$('detach').addEventListener('click', () => dropBridge('detached by you'));
 $('ask').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const prompt = promptEl.value.trim();

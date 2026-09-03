@@ -341,3 +341,79 @@ test("14. an unreachable relay's chip tells the reader to check the address matc
   assert.match(chips.at(-1) ?? '', /matches its --origin/, 'the chip names the origin check');
   assert.equal(w.streams.length, 0, 'no stream opened');
 });
+
+// ── The extension-carried transport (t-4202): the page's side ──────────────
+// The page fetches nothing; it answers the endpoint's event. What must hold:
+// the bridge_opened row carries `transport: 'extension'` and is ON THE CHAIN
+// before the ack goes out (counsel, seq 2118, condition 2); the ack's offered
+// predicate excludes partner_attest (condition 1); a second concurrent attach
+// is refused (t-3dcc), and so is a non-loopback relay.
+function extWorld({ tools = TOOLS } = {}) {
+  const doc = new EventTarget();
+  Object.assign(doc, {
+    modelContext: { getTools: async () => tools, executeTool: async () => '', addEventListener() {} },
+    getElementById: () => null,
+    createElement: () => ({ dataset: {}, style: {} }),
+    body: { insertBefore() {} },
+  });
+  globalThis.document = doc;
+  globalThis.location = { href: 'https://take-five-lw7.pages.dev/' };
+  return doc;
+}
+async function loadExt() {
+  const mod = await import(`../src/bridge.js?t=${Date.now()}${Math.random()}`);
+  return mod;
+}
+const ATTACH = { relay: 'http://127.0.0.1:7340', token_fingerprint: 'a1b2c3d4', transport: 'extension' };
+
+test('E1. the door row lands with transport: extension BEFORE the ack, and the ack offers the page\'s set — partner_attest excluded', async () => {
+  const doc = extWorld({ tools: [...TOOLS, { name: 'partner_attest', description: '', inputSchema: {} }] });
+  const { listenForExtensionBridge } = await loadExt();
+  const room = await seedRoom('Room host');
+  const before = room.ledger.length;
+  listenForExtensionBridge(room, { offered: (n) => n !== 'partner_attest' });
+  const acked = new Promise((resolve) => doc.addEventListener('take-five:bridge-recorded', (ev) => {
+    // Observed at the moment of the ack: the row is already there.
+    resolve({ detail: ev.detail, rows: room.ledger.entries.slice(before) });
+  }));
+  const ev = new CustomEvent('take-five:bridge-attached', { detail: ATTACH, cancelable: true });
+  doc.dispatchEvent(ev);
+  assert.equal(ev.defaultPrevented, true, 'claimed');
+  const { detail, rows } = await acked;
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].kind, 'bridge_opened');
+  assert.equal(rows[0].payload.transport, 'extension');
+  assert.equal(rows[0].payload.relay, ATTACH.relay);
+  assert.equal(rows[0].payload.token_fingerprint, 'a1b2c3d4');
+  assert.deepEqual(rows[0].payload.tools, ['read_ledger', 'commit_to_round'], 'the row names what is offered, not what is registered');
+  assert.equal(detail.offered('partner_attest'), false);
+  assert.equal(detail.offered('read_ledger'), true);
+  assert.deepEqual(detail.tools, ['read_ledger', 'commit_to_round']);
+  assert.equal((await room.ledger.verify()).ok, true);
+});
+
+test('E2. a second attach while one is open is refused, and so is a relay that is not loopback; a detached door may be opened again', async () => {
+  const doc = extWorld();
+  const { listenForExtensionBridge } = await loadExt();
+  const room = await seedRoom('Room host');
+  listenForExtensionBridge(room, { offered: () => true });
+  const refusals = [];
+  doc.addEventListener('take-five:bridge-refused', (ev) => refusals.push(ev.detail.reason));
+  const bad = new CustomEvent('take-five:bridge-attached', { detail: { ...ATTACH, relay: 'http://evil.example' }, cancelable: true });
+  doc.dispatchEvent(bad);
+  assert.equal(bad.defaultPrevented, false);
+  assert.match(refusals[0], /only a loopback relay/);
+  const first = new Promise((resolve) => doc.addEventListener('take-five:bridge-recorded', resolve, { once: true }));
+  doc.dispatchEvent(new CustomEvent('take-five:bridge-attached', { detail: ATTACH, cancelable: true }));
+  await first;
+  const second = new CustomEvent('take-five:bridge-attached', { detail: ATTACH, cancelable: true });
+  doc.dispatchEvent(second);
+  assert.equal(second.defaultPrevented, false, 'not claimed');
+  assert.match(refusals[1], /already attached/);
+  assert.equal(room.ledger.entries.filter((e) => e.kind === 'bridge_opened').length, 1, 'one door row');
+  doc.dispatchEvent(new CustomEvent('take-five:bridge-detached', { detail: { reason: 'the panel detached' } }));
+  const again = new Promise((resolve) => doc.addEventListener('take-five:bridge-recorded', resolve, { once: true }));
+  doc.dispatchEvent(new CustomEvent('take-five:bridge-attached', { detail: ATTACH, cancelable: true }));
+  await again;
+  assert.equal(room.ledger.entries.filter((e) => e.kind === 'bridge_opened').length, 2, 'a re-opened door is another row, honestly');
+});
