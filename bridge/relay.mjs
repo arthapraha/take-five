@@ -60,7 +60,9 @@ if (!pageOrigin) {
   process.exit(2);
 }
 const port = Number(arg('--port', process.env.BRIDGE_PORT || 7340));
-const log = (...a) => console.error('[bridge]', ...a);
+// Timestamped: on the 2 Sept take the relay's leg of the receipt had to come
+// from a watcher's clock at 3 s resolution because these lines carried none.
+const log = (...a) => console.error(new Date().toISOString(), '[bridge]', ...a);
 
 let relay;
 try {

@@ -40,7 +40,9 @@ function arg(name, fallback) {
   const i = process.argv.indexOf(name);
   return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 }
-const log = (...a) => console.error('[sidecar]', ...a);
+// Timestamped (see relay.mjs). Everything goes to stderr; stdout stays empty,
+// so redirect 2>&1 if you want a log file.
+const log = (...a) => console.error(new Date().toISOString(), '[sidecar]', ...a);
 
 const origin = arg('--origin', process.env.BRIDGE_ORIGIN);
 if (!origin) { console.error('[sidecar] --origin <page origin> is required (the relay serves exactly one page)'); process.exit(2); }

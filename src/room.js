@@ -161,3 +161,14 @@ export async function seedRoom(hostName) {
 export function offeredNames(readNames, phaseNames) {
   return [...new Set([...(readNames ?? []), ...(phaseNames ?? [])])];
 }
+
+/** What the page's WebMCP surface IS, said out loud. `native` is measured
+ *  before the polyfill runs (the browser's own `document.modelContext` was
+ *  already there); `present` is whether anything is there afterwards. A page
+ *  that infers "native" from side effects (string-typed schemas, on 2 Sept) is
+ *  guessing; this reads it. */
+export function surfaceLabel({ native, present }) {
+  if (native) return 'webmcp: native';
+  if (present) return 'webmcp: polyfill (@mcp-b/webmcp-polyfill) — the browser has no native surface';
+  return 'webmcp: none — no document.modelContext in this browser';
+}

@@ -44,7 +44,10 @@ async function connect() {
     $('settings').open = false;
   } catch (err) {
     agent = null; who.dataset.state = 'off';
-    who.textContent = `agent: not connected — ${err?.message ?? err}`;
+    const m = err?.message ?? String(err);
+    // "Failed to fetch" is what a stopped agent, a wrong endpoint and a
+    // refused origin all look like from here; say what to check.
+    who.textContent = `agent: not connected — ${m}${/Failed to fetch/.test(m) ? ' (is the local agent running, and does the Endpoint match what it printed?)' : ''}`;
     $('settings').open = true;
   }
 }

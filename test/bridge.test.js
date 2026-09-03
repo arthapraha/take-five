@@ -326,3 +326,18 @@ test('13. t-089f on the page side: a relay that already serves another page refu
   const push = w.fetches.find((f) => f.url === `${RELAY}/tools`);
   assert.match(push.headers['x-bridge-page'], /^[0-9a-f]{32}$/, 'the push carried this page load\'s nonce');
 });
+
+// ── "FAILED TO FETCH" NAMES WHAT TO CHECK (t-6b35) ─────────────────────────
+// A relay serving another origin answers a foreign page with a 403 carrying no
+// CORS headers, which fetch reports exactly like a relay that is down. The page
+// cannot tell them apart, so the chip must say both (counsel, seq 1847).
+test("14. an unreachable relay's chip tells the reader to check the address matches the relay's origin", async () => {
+  const w = world({ url: `http://localhost:5177/?bridge=${RELAY}&token=${TOKEN}`, tools: TOOLS, relayFails: true });
+  const chips = [];
+  globalThis.document.getElementById = (id) => (id === 'bridge-status' ? { set textContent(t) { chips.push(t); }, dataset: {} } : null);
+  const attachBridge = await load();
+  const result = await attachBridge(await seedRoom('Room host'));
+  assert.equal(result, null);
+  assert.match(chips.at(-1) ?? '', /matches its --origin/, 'the chip names the origin check');
+  assert.equal(w.streams.length, 0, 'no stream opened');
+});

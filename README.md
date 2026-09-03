@@ -3,9 +3,11 @@
 A governed room for humans and agents, built on [WebMCP](https://webmachinelearning.github.io/webmcp/).
 
 **Try it:** https://take-five-lw7.pages.dev/ — in ChatGPT's in-app browser, or in
-Chrome with its WebMCP flags enabled (we tested on 152). Judges' testing instructions, including the optional
-bring-your-own-agent path through the local bridge and the **Take Five Agent**
-Chrome extension, are on the Devpost submission page.
+Chrome with its WebMCP flags enabled (we tested on 152). For the optional
+bring-your-own-agent path — the local bridge and the **Take Five Agent** Chrome
+extension — see [Bring your own agent](#bring-your-own-agent-the-local-bridge-and-take-five-agent)
+below; the same recipe is in the judges' testing instructions on Devpost, which
+only judges can open.
 
 Five phases — **Open · Commit · Reveal · Ruling · Closed** — where the phase you are in *is* the set of tools the page offers. Every act lands on an append-only, hash-chained ledger, and every ledger entry records not just *what* happened but *how we know who did it*.
 
@@ -34,6 +36,52 @@ So `client-asserted` means what it says: the page's claim, same session, disting
 **There is currently no way to build a human-only gate here.** The primitive intended for it, `requestUserInteraction()`, is absent from every environment we tested — the polyfill, Chrome behind the WebMCP flag, and ChatGPT's in-app browser. Until it exists, a page cannot require a human, and any product claiming otherwise is describing a convention rather than a control.
 
 Signature schemes prove who authored a record; a neutral venue records what happened between parties. This scopes deliberately to the venue.
+
+## Bring your own agent (the local bridge and Take Five Agent)
+
+The page publishes its tools through WebMCP; `bridge/relay.mjs` is a small
+loopback relay that lets any MCP client outside the browser call exactly the
+tools the page offers a riding agent, and `extension/` + `sidecar/agent.mjs`
+are our own side panel and local agent that use it.
+
+The recipe (Node 22 or newer — tested on 26; the repository pins no engine):
+
+```bash
+npm ci
+node sidecar/agent.mjs --origin https://take-five-lw7.pages.dev --extension-origin chrome-extension://<id>
+```
+
+1. Load the unpacked `extension/` folder in Chrome (`chrome://extensions` →
+   Developer mode → Load unpacked) and open the **Take Five Agent** side panel.
+   The panel prints its own origin; that `chrome-extension://<id>` is what
+   `--extension-origin` wants — the agent answers exactly that one extension.
+2. The agent prints a `?bridge=…&token=…` URL for the page and an endpoint +
+   token for the panel. Open the page with that URL; paste the endpoint and
+   token into the panel's Connection section; Connect.
+3. Chrome asks once whether the site may "access other apps and services on
+   this device" — allow it. The page's bridge chip goes green with the tools
+   offered; the panel says the agent is connected and the page attached.
+4. Type "Read the ledger on Take Five." A `tool:read_ledger` row lands on the
+   chain, chained to the `bridge_opened` row that names the door. The model is
+   whatever Ollama serves (`SIDECAR_MODEL`, default `glm-5.3:cloud`); the agent
+   runs outside the browser, and the live page alone shows the tools, not a
+   running agent.
+
+Operational notes, learned the hard way on 2 September:
+
+- **Tokens.** The relay and the agent each mint a per-run token (or take one
+  from `BRIDGE_TOKEN` / `SIDECAR_TOKEN`). The relay's rides the page URL, so it
+  is in the address bar; the agent's is pasted into the panel. **Rotate both
+  whenever a screenshot or recording shows the address bar or the panel's
+  Connection field** — restart the agent; it prints fresh values. They are
+  loopback-only, but a token on film is a token on film.
+- **One page per relay.** A second tab is refused at its first push and its
+  chip says so; close the other tab, or start a second relay on another port.
+- **"Failed to fetch"** on the page's bridge chip or the panel means the same
+  three things: the process is not running, the address is wrong, or the page's
+  origin does not match the relay's `--origin` (a foreign origin gets a 403 with
+  no CORS headers, which the browser reports exactly like "down").
+- **Logs** are timestamped and go to stderr; stdout stays empty.
 
 ## Running it
 
