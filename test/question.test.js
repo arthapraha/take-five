@@ -72,3 +72,17 @@ test('5. the fingerprint tells a real press from page script — by isTrusted, t
   assert.equal(enter.isTrusted, true);
   assert.deepEqual(enter.client, [0, 0], 'no coordinates: nothing was pointed at');
 });
+
+test("6. the commitment gate is the PAGE's, not the room's: setQuestion after a sealed position still appends — the room refuses only what it can judge alone", async () => {
+  // Hermes (take-five seq 2119): Round.retitle() refuses once a position is
+  // sealed and the page checks it FIRST; the room method does not know the
+  // round. Pinned so a future caller that skips retitle is caught by this line,
+  // not discovered on the chain.
+  const room = await seedRoom('Room host');
+  const round = new Round(QUESTION.trim());
+  round.commitments.set('rider', { commitment: 'deadbeef', entryHash: 'x' });
+  assert.equal(round.questionOpen, false);
+  const entry = await room.setQuestion('A question after the seal?');
+  assert.equal(entry.kind, 'artefact_updated', 'the room appended: it cannot see the commitment');
+  assert.throws(() => round.retitle('A question after the seal?'), /frozen/, 'the round is the gate, and the page asks it first');
+});
