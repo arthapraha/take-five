@@ -50,7 +50,7 @@ The room is **per-visitor and in-memory**. A reload is a fresh chain, whoever op
 
 ### What the polyfill cannot give you
 
-Two things need a browser that ships WebMCP natively — ChatGPT's in-app browser, or Chrome 149+ with `chrome://flags` set for WebMCP (the search returns more than one flag; enable them):
+Two things need a browser that ships WebMCP natively — ChatGPT's in-app browser, or Chrome with its WebMCP flags enabled in `chrome://flags` (the search returns two — `#enable-webmcp-testing` and `#devtools-webmcp-support`; enable both; we tested on 151 and 152):
 
 - **An agent to call the tools.** The polyfill registers the surface; it does not provide a client. Without one you can still drive `document.modelContext` from the console.
 - **Cross-origin exposure.** `exposedTo` throws `NotSupportedError` in the polyfill. The page says so in its own status chip rather than degrading quietly, and makes no cross-org claim it cannot back.
