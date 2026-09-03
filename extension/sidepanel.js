@@ -15,11 +15,12 @@ $('origin').textContent = `chrome-extension://${chrome.runtime.id}`;
 
 async function restore() {
   try {
-    const { endpoint, token, relay, relayToken } = await chrome.storage.local.get(['endpoint', 'token', 'relay', 'relayToken']);
+    const { endpoint, token, relay, relayToken, pageOrigin } = await chrome.storage.local.get(['endpoint', 'token', 'relay', 'relayToken', 'pageOrigin']);
     if (endpoint) endpointEl.value = endpoint;
     if (token) tokenEl.value = token;
     if (relay) relayEl.value = relay;
     if (relayToken) relayTokenEl.value = relayToken;
+    if (pageOrigin) $('page-origin').value = pageOrigin;
     if (endpoint && token) await connect();
   } catch {}
 }
@@ -73,18 +74,46 @@ function dropBridge(reason) {
   try { bridgePort?.disconnect(); } catch {}
   bridge = null; bridgePort = null;
 }
+// The isolated pipe first, then the MAIN-world endpoint; the port is opened
+// only once both are in place, so the first hello finds a listener.
+async function inject(tabId) {
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['page-relay.js'] });
+  await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', files: ['page-endpoint.js'] });
+}
+// Which site the panel may touch, named by the owner. Without a grant Chrome
+// hides the tab's URL from us, so the panel cannot read it off the tab.
+function pageOrigin() {
+  const raw = $('page-origin').value.trim();
+  let u; try { u = new URL(raw); } catch { throw new Error(`Page origin is not a URL: ${raw || '(empty)'}`); }
+  if (u.origin === 'null' || u.origin !== raw.replace(/\/$/, '')) throw new Error(`Page origin must be a bare origin, like ${u.origin}`);
+  return u.origin;
+}
 async function attachTab() {
   dropBridge('re-attaching');
   let tab;
   try {
     [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) throw new Error('no active tab');
-    // The isolated pipe first, then the MAIN-world endpoint; the port is opened
-    // only once both are in place, so the first hello finds a listener.
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['page-relay.js'] });
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', files: ['page-endpoint.js'] });
+    try {
+      // First the grant Chrome gives for free: activeTab, from the icon click.
+      await inject(tab.id);
+    } catch (first) {
+      // MEASURED 3 Sept 2026 on Chrome 152 (Attila's machine): the icon click
+      // that opens this panel does NOT grant activeTab — executeScript answers
+      // "Cannot access contents of the page. Extension manifest must request
+      // permission to access the respective host." So ask for exactly one
+      // site, the one the owner named, through Chrome's own dialog; the
+      // manifest itself still carries no host access (optional only).
+      const origin = pageOrigin();
+      bridgeStatus({ state: 'checking', text: `bridge: Chrome did not grant this tab on the icon click — asking you for ${origin} …` });
+      const granted = await chrome.permissions.request({ origins: [`${origin}/*`] });
+      if (!granted) throw new Error(`no grant for ${origin} — you declined Chrome's dialog, so nothing was injected`);
+      try { await inject(tab.id); } catch (second) {
+        throw new Error(`${second?.message ?? second} — is the active tab on ${origin}?`);
+      }
+    }
   } catch (err) {
-    bridgeStatus({ state: 'absent', text: `bridge: cannot attach — ${err?.message ?? err}. Click the Take Five Agent icon on that tab first (that grants this one tab), then Attach` });
+    bridgeStatus({ state: 'absent', text: `bridge: cannot attach — ${err?.message ?? err}` });
     return;
   }
   bridgePort = chrome.tabs.connect(tab.id, { name: 'take-five-bridge' });
@@ -98,7 +127,7 @@ async function attachTab() {
   const mine = bridge;
   bridgePort.onMessage.addListener((m) => { if (bridge === mine) mine.fromPage(m); });
   bridgePort.onDisconnect.addListener(() => { if (bridge === mine) dropBridge('the page navigated or closed'); });
-  await chrome.storage.local.set({ relay: relayEl.value.trim(), relayToken: relayTokenEl.value.trim() });
+  await chrome.storage.local.set({ relay: relayEl.value.trim(), relayToken: relayTokenEl.value.trim(), pageOrigin: $('page-origin').value.trim() });
   try { await mine.start(); } catch (err) {
     bridgeStatus({ state: 'absent', text: `bridge: ${err.message}` });
     if (bridge === mine) dropBridge('not started');
