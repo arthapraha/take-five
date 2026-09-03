@@ -18,6 +18,12 @@
     <label>Token <input id="token" placeholder="paste the token the local agent printed" spellcheck="false"></label>
     <button id="connect" type="button">Connect</button>
     <p id="tools" class="tools"></p>
+    <hr>
+    <p class="origin">The bridge into the page. This panel carries the page side: the page's address carries no token, and a tab is touched only when you click Attach — first click the Take Five Agent icon on that tab (that is the grant), then Attach.</p>
+    <label>Relay URL <input id="relay" value="http://127.0.0.1:7340" spellcheck="false"></label>
+    <label>Relay token <input id="relay-token" placeholder="paste the token from the relay's ?bridge=…&amp;token= line" spellcheck="false"></label>
+    <div class="buttons"><button id="attach" type="button">Attach this tab</button> <button id="detach" type="button" class="quiet">Detach</button></div>
+    <p id="bridge" class="tools" data-state="absent">bridge: not attached</p>
   </details>
 
   <section id="transcript" aria-live="polite"></section>
@@ -27,6 +33,6 @@
     <button id="send" type="submit">Send to the agent</button>
   </form>
 
-  <script src="sidepanel.js"></script>
+  <script type="module" src="sidepanel.js"></script>
 </body>
 </html>

@@ -14,7 +14,7 @@ import { initializeWebMCPPolyfill } from '@mcp-b/webmcp-polyfill';
 import { seedRoom, PHASES, INGRESS, GRADE_NOTE, QUESTION, offeredNames } from './room.js';
 import { registerReadSurface, registerPhaseTools, registerPartnerSurface, PARTNER_ORIGIN } from './tools.js';
 import { Round } from './round.js';
-import { attachBridge } from './bridge.js';
+import { attachBridge, listenForExtensionBridge } from './bridge.js';
 
 initializeWebMCPPolyfill();
 
@@ -292,7 +292,11 @@ await syncPhaseTools();
 // Offered = the read surface (registered once, above) + the current phase tools —
 // exactly what the "tools the agent can see now" panel lists. First cut used the
 // phase list alone and offered the agent ONE tool (found live 08:15 UK).
-await attachBridge(room, { offered: (name) => offeredNames(reg.names, phaseTools.names).includes(name) });
+const offeredToBridge = (name) => offeredNames(reg.names, phaseTools.names).includes(name);
+await attachBridge(room, { offered: offeredToBridge });
+// t-4202: the same door, carried by Take Five Agent into any tab. The page
+// fetches nothing; it answers the endpoint's event with the same offered set.
+listenForExtensionBridge(room, { offered: offeredToBridge });
 
 // The cross-org line. `exposedTo` needs native WebMCP; the polyfill refuses it.
 // Whichever way it goes, the page SAYS which — a demo that quietly degraded

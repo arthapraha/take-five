@@ -82,3 +82,42 @@ Early. Nothing here is stable.
 ## Licence
 
 MIT — see [LICENSE](LICENSE).
+
+## Take Five Agent on any tab (the extension-carried bridge)
+
+Since t-4202 the panel carries the page side of the bridge itself, so the
+public page never names a loopback address and its URL carries no token. In
+the panel's Connection box: Relay URL and Relay token, then **Attach this
+tab**. First click the Take Five Agent icon on the tab you mean — that is the
+grant, for that one tab, for as long as it stays on that page — then Attach.
+
+What happens, in order: the panel probes the relay (token and one-page rule
+checked, nothing changed); only then is the page told hello; on a Take Five
+page the door is recorded on the chain — `bridge_opened`, `transport:
+extension` — and only after that record does the page list its tools or
+serve a call. The list is the page's own offered set (read surface plus the
+current phase), so `partner_attest` is refused through this door exactly as
+through `?bridge=`. On any other WebMCP page there is no chain: the panel says
+so, and the page's tools are listed as registered.
+
+Two things to know, once. Any script in the attached tab can speak both
+directions of the message pipe between the injected script and the panel; the
+trust boundary is your choice of tab, the token never entering the page, and
+the relay minting every call id. And a relay serves one origin, so the
+`?bridge=` door and the extension door cannot share a relay — not both at once;
+start a second relay on another port if you need both.
+
+A reload ends it: the injected script dies with the document, the pipe's port
+drops, and the panel closes the bridge — attach again, and the fresh page
+records a fresh door. The injected script itself does three things — list,
+execute, ack — and reads one attribute (`data-take-five`) to know whether it
+must wait for a chain; it never sees the token, only its fingerprint.
+
+Permissions, each with its reason: `activeTab` — the one tab the owner
+clicked the icon on; `scripting` — to inject into exactly that tab, exactly
+when Attach is clicked. No `tabs`, no `<all_urls>`, and no `host_permissions`:
+the relay is reached from the panel page over ordinary CORS, as t-70a1
+measured for the local agent; widening is a claim to measure, not assume.
+Because the caller is now the panel, the relay's one served origin is the
+panel's: start the local agent with `--origin chrome-extension://<id>` (the
+id the panel shows) alongside `--extension-origin` set to the same value.

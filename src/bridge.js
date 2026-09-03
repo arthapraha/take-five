@@ -206,3 +206,70 @@ export async function attachBridge(room, { offered = null } = {}) {
   };
   return relay;
 }
+
+/** The extension-carried transport (t-4202). Take Five Agent injects its
+ *  page endpoint into this tab on the owner's click; that script dispatches a
+ *  cancelable `take-five:bridge-attached` and serves NOTHING until this page
+ *  answers `take-five:bridge-recorded`. This page never fetches a loopback
+ *  address here — the relay connection lives in the panel — so the URL carries
+ *  no token. What the chain sees is the same `bridge_opened` row as the
+ *  `?bridge=` door, with `transport: 'extension'` so the row says how the door
+ *  was carried, and it lands BEFORE the ack — so no call can arrive ahead of
+ *  the record of the door it came through (counsel, seq 2118, condition 2).
+ *
+ *  The ack carries the page's `offered` predicate — the same one attachBridge
+ *  takes — so the endpoint lists and serves exactly what a riding agent may see
+ *  (condition 1): `partner_attest` is not offered through this door either.
+ *
+ *  A second attach while one is open is refused (t-3dcc); a door the panel
+ *  closed may be opened again, and the chain gets another row for it. */
+export function listenForExtensionBridge(room, { offered = null } = {}) {
+  const refuse = (reason) => document.dispatchEvent(new CustomEvent('take-five:bridge-refused', { detail: { reason } }));
+  document.addEventListener('take-five:bridge-attached', (ev) => {
+    const d = ev.detail ?? {};
+    if (ATTACHED) {
+      chip(`bridge: already attached to ${ATTACHED} — a second attach is refused`, 'absent');
+      refuse(`this page is already attached to ${ATTACHED}`);
+      return;
+    }
+    if (!LOOPBACK.test(String(d.relay ?? ''))) {
+      chip(`bridge: refused — only a loopback relay may be named, not ${d.relay}`, 'absent');
+      refuse(`only a loopback relay may be named, not ${d.relay}`);
+      return;
+    }
+    ev.preventDefault();
+    OFFERED = typeof offered === 'function' ? offered : null;
+    ATTACHED = `${d.relay} via Take Five Agent`;
+    chip(`bridge: opening via Take Five Agent to ${d.relay}…`, 'absent');
+    (async () => {
+      const tools = await currentTools();
+      await room.record({
+        kind: 'bridge_opened',
+        payload: {
+          relay: d.relay,
+          transport: 'extension',
+          token_fingerprint: String(d.token_fingerprint ?? '').slice(0, 8),
+          tools: tools.map((t) => t.name),
+          note: 'Take Five Agent carried the page side of the bridge into this tab; a local MCP relay may now call the tools this page publishes; each call is recorded as tool:<name> through the webmcp door',
+        },
+        seatId: 'room',
+        ingress: 'room',
+      });
+      chip(`bridge: open via Take Five Agent to ${d.relay} — ${tools.length} tools offered`, 'ready');
+      document.dispatchEvent(new CustomEvent('take-five:bridge-recorded', { detail: { offered: isOffered, tools: tools.map((t) => t.name) } }));
+    })().catch((err) => {
+      ATTACHED = null; OFFERED = null;
+      chip(`bridge: the door could not be recorded — ${err?.message ?? err}`, 'absent');
+      refuse(`the door could not be recorded — ${err?.message ?? err}`);
+    });
+  });
+  // The chip follows the endpoint: re-counted on every list, cleared on detach.
+  document.addEventListener('take-five:bridge-tools', (ev) => {
+    if (ATTACHED) chip(`bridge: open via Take Five Agent — ${ev.detail?.tools?.length ?? 0} tools offered`, 'ready');
+  });
+  document.addEventListener('take-five:bridge-detached', () => {
+    if (!ATTACHED) return;
+    ATTACHED = null; OFFERED = null;
+    chip('bridge: closed — Take Five Agent detached; attach again from the panel', 'absent');
+  });
+}

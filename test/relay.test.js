@@ -240,3 +240,25 @@ test('a public https page reaching the loopback relay is a private-network reque
   assert.equal(foreign.status, 403);
   assert.equal(foreign.headers.get('access-control-allow-private-network'), null, 'never granted to an origin we do not serve');
 });
+
+test("t-4202: the panel's probe — a /result for an id the relay never issued answers 404 after the token and one-page checks, and changes nothing", async (t) => {
+  // extension/bridge-client.js proves the relay is there, the token right and
+  // the slot free BEFORE the page is told hello, by exactly this request. The
+  // client's tests fake the relay; this pins the contract against the real one
+  // (counsel, take-five seq 2122) so the probe cannot drift silently.
+  const { base } = await boot(t, { firstListWaitMs: 100 });
+  const N = 'c'.repeat(32);
+  const probe = (nonce, token = TOKEN) => fetch(`${base}/result`, { method: 'POST', headers: { ...H, 'x-bridge-token': token, 'x-bridge-page': nonce }, body: JSON.stringify({ id: `probe-${nonce}` }) });
+  const health = async () => (await fetch(`${base}/health`)).json();
+  assert.equal((await probe(N, 'wrong-token')).status, 401, 'the token is checked first');
+  assert.equal((await probe(N)).status, 404, 'a fresh nonce before any page: known relay, right token, free slot');
+  assert.equal((await health()).pages, 0, 'and nothing changed — the slot is still free');
+  // The same nonce then attaches normally — the probe did not spend it.
+  const ctrl = new AbortController();
+  t.after(() => ctrl.abort());
+  const stream = await fetch(`${base}/events?token=${TOKEN}&page=${N}`, { headers: { origin: PAGE }, signal: ctrl.signal });
+  assert.equal(stream.status, 200);
+  assert.equal((await health()).pages, 1);
+  assert.equal((await probe(N)).status, 404, 'the attached page may still probe: 404, not 409');
+  assert.equal((await probe('d'.repeat(32))).status, 409, 'another nonce is refused at the probe — so its panel never says hello');
+});
