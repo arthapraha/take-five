@@ -262,3 +262,23 @@ test("t-4202: the panel's probe — a /result for an id the relay never issued a
   assert.equal((await probe(N)).status, 404, 'the attached page may still probe: 404, not 409');
   assert.equal((await probe('d'.repeat(32))).status, 409, 'another nonce is refused at the probe — so its panel never says hello');
 });
+
+test("t-4202 follow-up: an extension origin is a bare origin the relay can serve — the URL parser's \"null\" is not the last word", async (t) => {
+  // The panel carries the page side now, so the relay's one origin may be
+  // chrome-extension://<id>; the first live start refused it ("did you mean null?").
+  const EXT = 'chrome-extension://ihkfpegehklkjmilmbccagomidjejplg';
+  const r = createRelay({ pageOrigin: EXT, token: TOKEN, port: 0 });
+  assert.equal(r.origin, EXT);
+  await new Promise((res) => r.httpServer.listen(0, '127.0.0.1', res));
+  t.after(() => r.httpServer.close());
+  const base = `http://127.0.0.1:${r.httpServer.address().port}`;
+  const ok = await fetch(`${base}/health`, { headers: { origin: EXT } });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.headers.get('access-control-allow-origin'), EXT, 'CORS answers the extension origin');
+  const foreign = await fetch(`${base}/health`, { headers: { origin: 'chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' } });
+  assert.equal(foreign.status, 403, 'another extension is another origin');
+  // Shape is exact: a path, an upper-case letter or a wrong length is refused.
+  for (const bad of [`${EXT}/`, 'chrome-extension://IHKFPEGEHKLKJMILMBCCAGOMIDJEJPLG', 'chrome-extension://abc']) {
+    assert.throws(() => createRelay({ pageOrigin: bad, token: TOKEN }), /bare origin|not a URL/);
+  }
+});
