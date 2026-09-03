@@ -88,8 +88,17 @@ export const FIRST_LIST_WAIT_MS = 45_000;
 export function createRelay({ pageOrigin, token = mintToken(), port = 7340, log = () => {}, firstListWaitMs = FIRST_LIST_WAIT_MS } = {}) {
   if (!pageOrigin) throw new Error('createRelay: pageOrigin is required — the relay serves exactly one page');
   let origin;
-  try { origin = new URL(pageOrigin).origin; } catch { throw new Error(`createRelay: pageOrigin is not a URL: ${pageOrigin}`); }
-  if (origin !== pageOrigin) throw new Error(`createRelay: pageOrigin must be a bare origin, got ${pageOrigin} (did you mean ${origin}?)`);
+  // Since t-4202 the caller may be Take Five Agent's panel rather than a page:
+  // its origin is chrome-extension://<32 letters a–p>, for which the URL
+  // parser answers "null" (a non-special scheme has no origin in the spec), so
+  // it is recognised by shape and served under the same one-origin rule. Found
+  // the first time the merged agent was started with the panel's id (3 Sept
+  // 21:5x UK): the relay refused its own extension.
+  if (/^chrome-extension:\/\/[a-p]{32}$/.test(pageOrigin)) origin = pageOrigin;
+  else {
+    try { origin = new URL(pageOrigin).origin; } catch { throw new Error(`createRelay: pageOrigin is not a URL: ${pageOrigin}`); }
+    if (origin !== pageOrigin) throw new Error(`createRelay: pageOrigin must be a bare origin, got ${pageOrigin} (did you mean ${origin}?)`);
+  }
 
   const state = {
     tools: [],          // last list the page pushed: [{name, description, inputSchema}]
