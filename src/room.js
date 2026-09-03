@@ -96,7 +96,37 @@ export class Room {
     const hash = await sha256Hex(text);
     this.artefacts.set(hash, { name, text, hash, bytes: new TextEncoder().encode(text).length });
     await this.record({ kind: 'artefact_added', payload: { name, hash }, seatId, ingress });
+    if (name === 'question.md') { this.question = text; this.questionHash = hash; }
     return hash;
+  }
+
+  /** The host types the room's question (t-3c74). A host act through the ui
+   *  door, graded client-asserted like every other host act, carrying the raw
+   *  properties of whatever pressed the button — the same honesty the ratify
+   *  rows carry: the page records what it saw, never the word "human".
+   *
+   *  It APPENDS an `artefact_updated` row for a new version of question.md,
+   *  after the seed rows, never before them — nothing renumbers. Whether the
+   *  question may still change is the ROUND's business (a sealed position
+   *  freezes it; see Round.retitle), so the caller checks that first; this
+   *  method only refuses what it can judge on its own: the seat and the text. */
+  async setQuestion(text, { seatId = 'host', ingress = 'ui', input = null } = {}) {
+    const seat = this.seat(seatId);
+    if (!seat || seat.role !== 'host') throw new Error('only the host seat sets the question');
+    const next = String(text ?? '').trim();
+    if (!next) throw new Error('a question is required');
+    const previous = this.questionHash ?? null;
+    const body = `${next}\n`;
+    const hash = await sha256Hex(body);
+    this.artefacts.set(hash, { name: 'question.md', text: body, hash, bytes: new TextEncoder().encode(body).length });
+    this.question = body;
+    this.questionHash = hash;
+    return this.record({
+      kind: 'artefact_updated',
+      payload: { name: 'question.md', hash, previous, confirmation: { method: 'in-page input', input } },
+      seatId,
+      ingress,
+    });
   }
 
   async advance(to, { seatId = 'host', ingress = 'ui' } = {}) {
@@ -160,4 +190,21 @@ export async function seedRoom(hostName) {
  *  because neither input does. */
 export function offeredNames(readNames, phaseNames) {
   return [...new Set([...(readNames ?? []), ...(phaseNames ?? [])])];
+}
+
+/** Raw properties of the press that set the question — the same measurement
+ *  the ratify rows record, and with the same reading: `isTrusted` is the one
+ *  field a page cannot forge; the rest distinguishes careless script from
+ *  careful script and nothing else. Pure, so a node test can pin that a real
+ *  press and a scripted `.click()` come out different. */
+export function inputFingerprint(ev, prelude = []) {
+  if (!ev) return { via: 'none — no event', prelude: prelude.join('+') || 'none' };
+  return {
+    via: ev.type ?? 'unknown',
+    isTrusted: Boolean(ev.isTrusted),
+    detail: ev.detail ?? 0,
+    screen: [ev.screenX ?? 0, ev.screenY ?? 0],
+    client: [ev.clientX ?? 0, ev.clientY ?? 0],
+    prelude: prelude.length ? prelude.join('+') : 'none',
+  };
 }

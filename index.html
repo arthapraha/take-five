@@ -25,6 +25,11 @@
 
         <h3>The question</h3>
         <p id="question" class="question"></p>
+        <form id="ask-question" class="composer" hidden>
+          <input id="question-input" type="text" maxlength="280" placeholder="Type the room's question" autocomplete="off">
+          <button id="set-question" type="submit" class="primary">Set the question</button>
+        </form>
+        <p id="question-note" class="question-note" hidden></p>
 
         <h3>Tools the agent can see now</h3>
         <ul id="tools" class="tools"></ul>
