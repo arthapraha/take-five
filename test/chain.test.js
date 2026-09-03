@@ -139,3 +139,36 @@ test('canonical form is key-order independent', async () => {
   const b = await sha256Hex(preimage({ ts: 't', prev: GENESIS_PREV, actor, payload: { a: 2, b: 1 }, kind: 'x', seq: 1 }));
   assert.equal(a, b, 'two spellings of the same entry must hash identically');
 });
+
+// ── EVERY ROW IS ANNOUNCED WHEN IT LANDS (t-6991) ────────────────────────────
+// On the 3 Sept film the declined ratification's row (#16) appeared three
+// minutes after the Decline click — at the next request. The ledger had it on
+// time; the page repainted only at a handful of call sites, and that path had
+// none. The fix is a hook on the ledger itself, so the paint cannot depend on
+// which door an act came through.
+
+test('subscribers hear each entry once, in order, after it is on the chain', async () => {
+  const l = new Ledger();
+  const seen = [];
+  const off = l.subscribe((e) => seen.push({ seq: e.seq, len: l.length, tip: l.tip }));
+  const a = await l.append({ kind: 'ratification_requested', actor });
+  const b = await l.append({ kind: 'ratification_declined', actor });
+  assert.deepEqual(seen, [{ seq: 1, len: 1, tip: a.hash }, { seq: 2, len: 2, tip: b.hash }],
+    'called after the push: the entry is already the tip when the subscriber runs');
+  off();
+  await l.append({ kind: 'act', actor });
+  assert.equal(seen.length, 2, 'unsubscribed listeners hear nothing more');
+});
+
+test('a subscriber that throws does not break the append or the chain', async () => {
+  const l = new Ledger();
+  l.subscribe(() => { throw new Error('painter crashed'); });
+  const heard = [];
+  l.subscribe((e) => heard.push(e.seq));
+  const e = await l.append({ kind: 'act', actor });
+  assert.equal(e.seq, 1);
+  assert.equal(l.length, 1);
+  assert.deepEqual(heard, [1], 'later subscribers still run');
+  assert.equal((await l.verify()).ok, true);
+  assert.throws(() => l.subscribe('not a function'), /subscribe needs a function/);
+});

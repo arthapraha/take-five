@@ -63,6 +63,27 @@ export class Ledger {
   // overlapping `ratify_ruling` calls were enough to do it.
   #tail = Promise.resolve();
 
+  // Who wants to know when an entry lands. The page repaints its chain from
+  // here, so a row is on screen the moment it is on the ledger — every row,
+  // through every door. Before this, the repaint lived at a handful of call
+  // sites, and a declined ratification (host door, no phase change, no tool
+  // re-sync) had none: its row sat recorded but unpainted until the NEXT act
+  // repainted, which on the 3 Sept film made #16 look appended three minutes
+  // late, at the next request (t-6991). The record was never late; the paint
+  // was. A subscriber that throws must not break the append — the entry is
+  // already on the chain by then, and a chain does not un-append — but it is
+  // not silent either: a painter that crashes on every row should be loud.
+  // Subscribers run synchronously inside the serialised append and must not
+  // await; a slow subscriber would slow every later append. A Set, so the same
+  // function subscribed twice is called once — deliberate.
+  #subscribers = new Set();
+
+  subscribe(fn) {
+    if (typeof fn !== 'function') throw new Error('subscribe needs a function');
+    this.#subscribers.add(fn);
+    return () => { this.#subscribers.delete(fn); };
+  }
+
   async append(args) {
     const run = this.#tail.then(() => this.#appendOne(args));
     // Keep the queue alive when an append rejects: the caller still sees the
@@ -85,6 +106,12 @@ export class Ledger {
     };
     entry.hash = await sha256Hex(preimage(entry));
     this.#entries.push(entry);
+    for (const fn of this.#subscribers) {
+      try { fn(entry); } catch (err) {
+        // The entry is on the chain; a listener's failure is its own — said out loud.
+        console.warn(`ledger subscriber failed on entry #${entry.seq}: ${err?.message ?? err}`);
+      }
+    }
     return entry;
   }
 
