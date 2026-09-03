@@ -2,8 +2,8 @@
 
 A governed room for humans and agents, built on [WebMCP](https://webmachinelearning.github.io/webmcp/).
 
-**Try it:** https://take-five-lw7.pages.dev/ — works in Chrome 149+ and in ChatGPT's
-in-app browser. Judges' testing instructions, including the optional
+**Try it:** https://take-five-lw7.pages.dev/ — in ChatGPT's in-app browser, or in
+Chrome with its WebMCP flags enabled (we tested on 152). Judges' testing instructions, including the optional
 bring-your-own-agent path through the local bridge and the **Take Five Agent**
 Chrome extension, are on the Devpost submission page.
 
