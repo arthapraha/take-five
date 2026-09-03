@@ -11,7 +11,7 @@
 // It never replaces a real implementation: in a browser that ships WebMCP, the
 // native `document.modelContext` wins and this is a no-op.
 import { initializeWebMCPPolyfill } from '@mcp-b/webmcp-polyfill';
-import { seedRoom, PHASES, INGRESS, GRADE_NOTE, QUESTION, offeredNames, surfaceLabel } from './room.js';
+import { seedRoom, PHASES, INGRESS, GRADE_NOTE, QUESTION, offeredNames, surfaceLabel, inputFingerprint } from './room.js';
 import { registerReadSurface, registerPhaseTools, registerPartnerSurface, PARTNER_ORIGIN } from './tools.js';
 import { Round } from './round.js';
 import { attachBridge } from './bridge.js';
@@ -129,6 +129,7 @@ function renderLedger() {
 }
 
 function renderAll() {
+  renderQuestionComposer();
   renderPhases();
   renderSeats();
   renderGrades();
@@ -262,6 +263,59 @@ $('invite-partner').addEventListener('click', async () => {
 });
 
 $('question').textContent = QUESTION.trim();
+
+// The host types the question (t-3c74). The composer shows ONLY while nobody
+// has sealed a position — visitors arrive in Commit, so "Open phase only"
+// would never show — and disappears the moment a commitment lands. The press
+// is recorded the way a ratify press is: the raw properties of the event, on
+// the row, never the word "human".
+const askForm = $('ask-question');
+const askInput = $('question-input');
+const askNote = $('question-note');
+let askPrelude = [];
+for (const t of ['pointerdown', 'mousedown']) {
+  $('set-question').addEventListener(t, (e) => { askPrelude.push(`${e.type}${e.pointerType ? `:${e.pointerType}` : ''}`); });
+}
+function renderQuestionComposer() {
+  askForm.hidden = !round.questionOpen;
+  askNote.hidden = round.questionOpen;
+  if (!round.questionOpen) askNote.textContent = 'The question is frozen: a position has been sealed against it.';
+}
+// The press that caused a submit is the button's click when there was one,
+// and the submit event itself when Enter did it. A click is CONSUMED when it
+// is used: a stale click must never ride a later Enter-submitted row as if a
+// hand had pressed the button again (counsel, take-five seq 2113). Enter's
+// own `isTrusted` is the honest measurement for an Enter.
+let lastPress = null;
+$('set-question').addEventListener('click', (e) => { lastPress = e; });
+askForm.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const text = askInput.value.trim();
+  if (!text) return;
+  const press = lastPress ?? ev;
+  lastPress = null;
+  const input = inputFingerprint(press, askPrelude);
+  askPrelude = [];
+  // Refuse before recording; record before retitling. A round retitled with
+  // no row behind it would be a change the chain never saw.
+  if (!round.questionOpen) {
+    askNote.hidden = false;
+    askNote.textContent = 'not set — the question is frozen: a position has already been sealed against it';
+    renderAll();
+    return;
+  }
+  try {
+    const entry = await room.setQuestion(text, { input });
+    round.retitle(text);
+    freshHash = entry.hash;
+    $('question').textContent = room.question.trim();
+    askInput.value = '';
+  } catch (err) {
+    askNote.hidden = false;
+    askNote.textContent = `not set — ${err?.message ?? err}`;
+  }
+  renderAll();
+});
 
 renderAll();
 

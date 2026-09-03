@@ -51,6 +51,24 @@ export class Round {
     return this.commitments.has(seatId);
   }
 
+  /** Whether the question may still change: only while nobody has sealed a
+   *  position against it. Visitors arrive in Commit, so "Open phase only"
+   *  would never be true; the honest gate is the absence of commitments. */
+  get questionOpen() {
+    return this.commitments.size === 0;
+  }
+
+  /** Change the question this round is about. Refused, not ignored, once a
+   *  commitment exists — a sealed position was sealed against THIS question,
+   *  and changing the question under it would make the reveal a lie. */
+  retitle(question) {
+    if (!this.questionOpen) throw new Error('the question is frozen: a position has already been sealed against it');
+    const next = String(question ?? '').trim();
+    if (!next) throw new Error('a question is required');
+    this.question = next;
+    return this.question;
+  }
+
   get committed() {
     return [...this.commitments.keys()];
   }

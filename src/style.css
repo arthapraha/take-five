@@ -101,6 +101,11 @@ h3 { margin: 1.3rem 0 0.5rem; font-size: 0.78rem; text-transform: uppercase; let
 .advance { margin-top: 0.7rem; width: 100%; }
 
 .question { margin: 0; font-size: 0.9rem; }
+.composer { display: flex; gap: 6px; margin: 8px 0 0; }
+/* `display:flex` would beat the `hidden` attribute's own display:none — seen live: the composer stayed on screen after a commit while reporting hidden. */
+.composer[hidden] { display: none; }
+.composer input { flex: 1; min-width: 0; background: #0e0e0e; color: var(--fg, #eee); border: 1px solid var(--line, #2a2a2a); border-radius: 4px; padding: 6px 8px; font: inherit; }
+.question-note { margin: 4px 0 0; font-size: 0.8rem; color: #9a9a9a; }
 
 .tools { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .tool {
