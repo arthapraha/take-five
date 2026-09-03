@@ -6,5 +6,6 @@
   "action": { "default_title": "Open Take Five Agent" },
   "side_panel": { "default_path": "sidepanel.html" },
   "permissions": ["sidePanel", "storage", "activeTab", "scripting"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": { "service_worker": "background.js" }
 }

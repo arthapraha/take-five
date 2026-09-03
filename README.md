@@ -163,7 +163,15 @@ must wait for a chain; it never sees the token, only its fingerprint.
 
 Permissions, each with its reason: `activeTab` — the one tab the owner
 clicked the icon on; `scripting` — to inject into exactly that tab, exactly
-when Attach is clicked. No `tabs`, no `<all_urls>`, and no `host_permissions`:
+when Attach is clicked; `optional_host_permissions` — measured on 3 September
+on Chrome 152: the icon click that opens the side panel does not grant
+`activeTab`, so when injection is refused the panel asks Chrome for the one
+site named in its Page origin field, and Chrome shows its own dialog for the
+owner to allow (revocable under the extension's Site access). Be clear about
+the two levels: the manifest's CEILING is optional access to any http or
+https site, which is what lets Chrome ask at all; the ACT is one site, by
+name, behind Chrome's dialog, each time. The manifest itself carries no
+ambient host access. No `tabs`, no `<all_urls>`, and no `host_permissions`:
 the relay is reached from the panel page over ordinary CORS, as t-70a1
 measured for the local agent; widening is a claim to measure, not assume.
 Because the caller is now the panel, the relay's one served origin is the

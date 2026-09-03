@@ -19,9 +19,11 @@
     <button id="connect" type="button">Connect</button>
     <p id="tools" class="tools"></p>
     <hr>
-    <p class="origin">The bridge into the page. This panel carries the page side: the page's address carries no token, and a tab is touched only when you click Attach — first click the Take Five Agent icon on that tab (that is the grant), then Attach.</p>
+    <p class="origin">The bridge into the page. This panel carries the page side: the page's address carries no token, and a tab is touched only when you click Attach. The icon click opens this panel; Chrome may or may not grant the tab on it — measured: it does not — and if not, the panel asks Chrome for the one site named below and Chrome shows its own dialog.</p>
     <label>Relay URL <input id="relay" value="http://127.0.0.1:7340" spellcheck="false"></label>
     <label>Relay token <input id="relay-token" placeholder="paste the token from the relay's ?bridge=…&amp;token= line" spellcheck="false"></label>
+    <label>Page origin <input id="page-origin" value="http://localhost:5183" spellcheck="false"></label>
+    <p class="origin">The site of the tab you will attach. Chrome grants a tab on the icon click when it can; when it cannot (measured: it does not while the click opens this panel), the panel asks Chrome for this one site, by name, and Chrome shows its own dialog for you to allow.</p>
     <div class="buttons"><button id="attach" type="button">Attach this tab</button> <button id="detach" type="button" class="quiet">Detach</button></div>
     <p id="bridge" class="tools" data-state="absent">bridge: not attached</p>
   </details>
