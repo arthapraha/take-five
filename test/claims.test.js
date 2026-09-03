@@ -1,3 +1,4 @@
+import { surfaceLabel } from '../src/room.js';
 // Claims about this project, checked mechanically.
 //
 // The README is the first thing a reader sees and the last thing anyone
@@ -45,4 +46,11 @@ test('the README does not claim a human-only gate', () => {
     'the README must keep stating that a human-only gate cannot currently be built');
   assert.doesNotMatch(readme, /\bguarantees?\s+(?:a\s+)?human\b|\bhuman-verified\b/i,
     'nothing here may claim to guarantee a human — this build demonstrated it cannot');
+});
+
+// The surface chip reads what is there rather than inferring it (t-6b35).
+test('the WebMCP surface label says native, polyfill, or none — measured, not inferred', () => {
+  assert.equal(surfaceLabel({ native: true, present: true }), 'webmcp: native');
+  assert.match(surfaceLabel({ native: false, present: true }), /^webmcp: polyfill/);
+  assert.match(surfaceLabel({ native: false, present: false }), /^webmcp: none/);
 });

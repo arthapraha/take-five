@@ -11,11 +11,17 @@
 // It never replaces a real implementation: in a browser that ships WebMCP, the
 // native `document.modelContext` wins and this is a no-op.
 import { initializeWebMCPPolyfill } from '@mcp-b/webmcp-polyfill';
-import { seedRoom, PHASES, INGRESS, GRADE_NOTE, QUESTION, offeredNames } from './room.js';
+import { seedRoom, PHASES, INGRESS, GRADE_NOTE, QUESTION, offeredNames, surfaceLabel } from './room.js';
 import { registerReadSurface, registerPhaseTools, registerPartnerSurface, PARTNER_ORIGIN } from './tools.js';
 import { Round } from './round.js';
 import { attachBridge } from './bridge.js';
 
+// Measured BEFORE the polyfill runs: native WebMCP is the browser's own
+// `document.modelContext`, present at this point; the polyfill installs one
+// only where none exists. The chip says which one this page is talking to,
+// so "native" is read off the page rather than inferred (t-6b35; the 2 Sept
+// runs had to infer it from string-typed inputSchema).
+const NATIVE_WEBMCP = Boolean(document.modelContext);
 initializeWebMCPPolyfill();
 
 const $ = (id) => document.getElementById(id);
@@ -260,6 +266,9 @@ $('question').textContent = QUESTION.trim();
 renderAll();
 
 const status = $('agent-status');
+const surface = $('surface');
+surface.dataset.state = document.modelContext ? 'ready' : 'absent';
+surface.textContent = surfaceLabel({ native: NATIVE_WEBMCP, present: Boolean(document.modelContext) });
 const reg = await registerReadSurface(room, { onCall: recordToolCall });
 
 if (reg.ok) {

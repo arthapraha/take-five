@@ -161,7 +161,11 @@ export async function attachBridge(room, { offered = null } = {}) {
     // A refusal is not a missing relay: the relay is there and serving another
     // page. Say so, record nothing — no door row for a door that will not open.
     if (err instanceof BridgeRefused) chip(`bridge: refused — ${err.message}`, 'absent');
-    else chip(`bridge: relay at ${relay} not reachable — ${err?.message ?? err}`, 'absent');
+    // A relay serving ANOTHER origin answers a foreign page with a 403 that
+    // carries no CORS headers, which fetch reports exactly like a relay that
+    // is down ("Failed to fetch"). The page cannot tell the two apart, so the
+    // chip names both (counsel, take-five seq 1847).
+    else chip(`bridge: relay at ${relay} not reachable — ${err?.message ?? err}. Check the relay is running and that this page's address matches its --origin`, 'absent');
     return null;
   }
 
