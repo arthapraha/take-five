@@ -2,6 +2,11 @@
 
 A governed room for humans and agents, built on [WebMCP](https://webmachinelearning.github.io/webmcp/).
 
+**Try it:** https://take-five-lw7.pages.dev/ — works in Chrome 149+ and in ChatGPT's
+in-app browser. Judges' testing instructions, including the optional
+bring-your-own-agent path through the local bridge and the **Take Five Agent**
+Chrome extension, are on the Devpost submission page.
+
 Five phases — **Open · Commit · Reveal · Ruling · Closed** — where the phase you are in *is* the set of tools the page offers. Every act lands on an append-only, hash-chained ledger, and every ledger entry records not just *what* happened but *how we know who did it*.
 
 ## Why this exists
