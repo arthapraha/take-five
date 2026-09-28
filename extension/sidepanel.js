@@ -3,7 +3,7 @@
 // room is what the local sidecar returns: which agent answered, which tools
 // were called, what came back.
 import { createBridgeClient } from './bridge-client.js';
-import { agentLine, toolsLine } from './panel-lines.js';
+import { agentLine, toolsLine, checkAgentReply } from './panel-lines.js';
 
 const $ = (id) => document.getElementById(id);
 const endpointEl = $('endpoint'); const tokenEl = $('token'); const who = $('who');
@@ -36,13 +36,23 @@ function row(kind, label, text) {
   el.append(k, pre); transcript.append(el); el.scrollIntoView({ block: 'end' });
 }
 
+// Every answer goes through checkAgentReply, which throws unless BOTH replies
+// are the shape the panel is about to describe. An error body must not become
+// a description (counsel, seq 3579). The .catch(() => null) turns a non-JSON
+// body into a missing one, which the check then refuses.
 async function readAgent() {
-  const h = await fetch(`${base()}/health`).then((r) => r.json());
+  const hr = await fetch(`${base()}/health`);
+  const health = await hr.json().catch(() => null);
   const t = await fetch(`${base()}/tools`, { headers: headers() });
-  if (t.status === 401) throw new Error('token refused by the local agent');
-  const { tools } = await t.json();
-  return { h, tools };
+  const toolsBody = await t.json().catch(() => null);
+  return checkAgentReply({ healthOk: hr.ok, health, toolsStatus: t.status, toolsOk: t.ok, toolsBody });
 }
+
+// Reads can overlap: a bridge 'absent', its 1.5s re-read, and a prompt's
+// refresh. A slow earlier read that landed after a newer one would put the
+// OLDER state back on screen as current. Each read takes a ticket, and only
+// the latest one may write (counsel's optional item, seq 3579).
+let readTicket = 0;
 function showAgent({ h, tools }) {
   agent = h.agent;
   who.dataset.state = 'on';
@@ -61,13 +71,15 @@ function showUnreachable(err) {
 }
 
 async function connect() {
+  const mine = ++readTicket;
   who.dataset.state = 'off'; who.textContent = 'agent: connecting…';
   try {
-    showAgent(await readAgent());
+    const reply = await readAgent();
+    if (mine === readTicket) showAgent(reply);
     await chrome.storage.local.set({ endpoint: base(), token: tokenEl.value.trim() });
     $('settings').open = false;
   } catch (err) {
-    showUnreachable(err);
+    if (mine === readTicket) showUnreachable(err);
     $('settings').open = true;
   }
 }
@@ -81,7 +93,13 @@ async function connect() {
 // answering would be the same stale claim this card exists to remove.
 async function refreshLines() {
   if (!agent) return;
-  try { showAgent(await readAgent()); } catch (err) { showUnreachable(err); }
+  const mine = ++readTicket;
+  try {
+    const reply = await readAgent();
+    if (mine === readTicket) showAgent(reply);
+  } catch (err) {
+    if (mine === readTicket) showUnreachable(err);
+  }
 }
 
 $('connect').addEventListener('click', connect);

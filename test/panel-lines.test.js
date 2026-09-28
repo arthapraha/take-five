@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { agentLine, toolsLine } from '../extension/panel-lines.js';
+import { agentLine, toolsLine, checkAgentReply } from '../extension/panel-lines.js';
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (f) => readFileSync(join(repo, f), 'utf8');
@@ -40,7 +40,42 @@ test('an empty tool list points at the control on the panel, and keeps the URL a
     'the button comes first: a reader inside the extension should not be sent away from it');
   assert.doesNotMatch(line, /tools the page offers now: $/,
     'the per-prompt refresh used to write this with nothing after it');
-  for (const bad of [undefined, null, 'x']) assert.equal(toolsLine(bad), line, 'a non-list reads as no tools');
+});
+
+// This REPLACES an assertion from the first commit of this card, which said
+// the opposite: `toolsLine(undefined)` returned the empty-tools line. That test
+// pinned the defect counsel found at 3579 into the suite. A failed read became
+// "the page offers no tools yet", which is a claim about the page made from
+// no evidence at all.
+test('a non-list is refused, never described as an empty page', () => {
+  for (const bad of [undefined, null, 'x', { tools: [] }]) {
+    assert.throws(() => toolsLine(bad), TypeError, `toolsLine(${JSON.stringify(bad)}) must not describe the page`);
+  }
+});
+
+const ok = { healthOk: true, health: { agent, relay: { pages: 1 } }, toolsStatus: 200, toolsOk: true, toolsBody: { tools: ['read_ledger'] } };
+
+test('a well-formed reply passes through unchanged', () => {
+  assert.deepEqual(checkAgentReply(ok), { h: ok.health, tools: ['read_ledger'] });
+  assert.deepEqual(checkAgentReply({ ...ok, toolsBody: { tools: [] } }).tools, [],
+    'a genuinely empty list is still an answer, and still reads as no tools');
+});
+
+test('an error body from /tools is a failure, not an empty page (counsel, 3579)', () => {
+  assert.throws(() => checkAgentReply({ ...ok, toolsStatus: 500, toolsOk: false, toolsBody: { error: 'relay down' } }),
+    /did not answer \/tools with a tool list \(HTTP 500\)/);
+  assert.throws(() => checkAgentReply({ ...ok, toolsBody: { error: 'no list' } }), /did not answer \/tools/,
+    'a 200 carrying no list is just as much a failure');
+  assert.throws(() => checkAgentReply({ ...ok, toolsBody: null }), /did not answer \/tools/,
+    'a body that was not JSON arrives as null and is refused');
+  assert.throws(() => checkAgentReply({ ...ok, toolsStatus: 401, toolsOk: false }), /token refused/);
+});
+
+test('an error body from /health is a failure, not "not connected" beside a green dot (counsel, 3579)', () => {
+  assert.throws(() => checkAgentReply({ ...ok, healthOk: false, health: { error: 'boom' } }), /did not answer \/health/);
+  assert.throws(() => checkAgentReply({ ...ok, health: { relay: { pages: 1 } } }), /did not answer \/health/,
+    'a 200 with no agent in it is refused, not rendered');
+  assert.throws(() => checkAgentReply({ ...ok, health: null }), /did not answer \/health/);
 });
 
 // What actually drifted: the sidecar told the owner to paste into a panel
