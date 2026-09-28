@@ -17,8 +17,11 @@
 //        SIDECAR_CHAT_TIMEOUT_MS (60000)
 // Both origins are REQUIRED and exact: the page the relay serves, and the one
 // extension the sidecar answers (the panel prints its own origin in its header).
-// It prints the relay's ?bridge= URL (open the page with it) and the sidecar
-// endpoint + token (paste into the panel's "Sidecar connection").
+// It prints the sidecar endpoint + token (paste into the panel's "Connection"),
+// and the relay prints its ?bridge=…&token= URL. The token in that URL goes into
+// the panel's "Relay token"; then "Attach this tab" puts the page on the bridge.
+// Opening the page with that URL instead still works, as the route that needs
+// no extension (t-96c4).
 
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -64,7 +67,7 @@ const transport = new StdioClientTransport({
   command: process.execPath,
   args: [path.join(here, '..', 'bridge', 'relay.mjs'), '--origin', origin, '--port', String(relayPort)],
   env: { ...process.env },
-  stderr: 'inherit', // the relay prints the ?bridge= URL to open the page with
+  stderr: 'inherit', // the relay prints its ?bridge=…&token= URL: the token for the panel's Attach, or the URL itself for the no-extension route
 });
 const client = new Client({ name: 'take-five-sidecar', version: '0.1.0' }, { capabilities: {} });
 await client.connect(transport);
@@ -104,5 +107,10 @@ try {
 server.listen(listen, '127.0.0.1', () => {
   log(`agent ${MODEL} via ${OLLAMA} — ${agent.runs}; answering only ${extensionOrigin}`);
   log(`panel endpoint: http://127.0.0.1:${listen}   token: ${token}`);
-  log('paste both into the Sidecar panel ("Sidecar connection"), open the page with the ?bridge= URL above, then prompt.');
+  // Named for what is on the panel's screen (t-96c4). This said "Sidecar
+  // connection", which is no longer a heading on the panel, and sent the
+  // reader only to the ?bridge= URL, which is the route that needs no
+  // extension, from the process that exists to serve the extension.
+  log('paste both into the panel under "Connection", put the token from the relay\'s ?bridge=…&token= line above into "Relay token", '
+    + 'open the room and click "Attach this tab" (or open the room with that ?bridge= URL instead), then prompt.');
 });
