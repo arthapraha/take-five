@@ -3,6 +3,7 @@
 // room is what the local sidecar returns: which agent answered, which tools
 // were called, what came back.
 import { createBridgeClient } from './bridge-client.js';
+import { agentLine, toolsLine, checkAgentReply } from './panel-lines.js';
 
 const $ = (id) => document.getElementById(id);
 const endpointEl = $('endpoint'); const tokenEl = $('token'); const who = $('who');
@@ -35,26 +36,69 @@ function row(kind, label, text) {
   el.append(k, pre); transcript.append(el); el.scrollIntoView({ block: 'end' });
 }
 
+// Every answer goes through checkAgentReply, which throws unless BOTH replies
+// are the shape the panel is about to describe. An error body must not become
+// a description (counsel, seq 3579). The .catch(() => null) turns a non-JSON
+// body into a missing one, which the check then refuses.
+async function readAgent() {
+  const hr = await fetch(`${base()}/health`);
+  const health = await hr.json().catch(() => null);
+  const t = await fetch(`${base()}/tools`, { headers: headers() });
+  const toolsBody = await t.json().catch(() => null);
+  return checkAgentReply({ healthOk: hr.ok, health, toolsStatus: t.status, toolsOk: t.ok, toolsBody });
+}
+
+// Reads can overlap: a bridge 'absent', its 1.5s re-read, and a prompt's
+// refresh. A slow earlier read that landed after a newer one would put the
+// OLDER state back on screen as current. Each read takes a ticket, and only
+// the latest one may write (counsel's optional item, seq 3579).
+let readTicket = 0;
+function showAgent({ h, tools }) {
+  agent = h.agent;
+  who.dataset.state = 'on';
+  who.textContent = agentLine(h);
+  $('tools').textContent = toolsLine(tools);
+}
+function showUnreachable(err) {
+  agent = null; who.dataset.state = 'off';
+  const m = err?.message ?? String(err);
+  // "Failed to fetch" is what a stopped agent, a wrong endpoint and a
+  // refused origin all look like from here; say what to check.
+  who.textContent = `agent: not connected — ${m}${/Failed to fetch/.test(m) ? ' (is the local agent running, and does the Endpoint match what it printed?)' : ''}`;
+  // Cleared rather than kept: a tool list from before the agent stopped
+  // answering would be reported as what the page offers NOW.
+  $('tools').textContent = '';
+}
+
 async function connect() {
+  const mine = ++readTicket;
   who.dataset.state = 'off'; who.textContent = 'agent: connecting…';
   try {
-    const h = await fetch(`${base()}/health`).then((r) => r.json());
-    const t = await fetch(`${base()}/tools`, { headers: headers() });
-    if (t.status === 401) throw new Error('token refused by the local agent');
-    const { tools } = await t.json();
-    agent = h.agent;
-    who.dataset.state = 'on';
-    who.textContent = `agent: ${agent.model} via ${agent.via} — outside the browser; page: ${h.relay?.pages ? 'attached' : 'NOT attached'}`;
-    $('tools').textContent = tools.length ? `tools the page offers now: ${tools.join(', ')}` : 'the page offers no tools yet — open it with the ?bridge= URL the relay printed';
+    const reply = await readAgent();
+    if (mine === readTicket) showAgent(reply);
     await chrome.storage.local.set({ endpoint: base(), token: tokenEl.value.trim() });
     $('settings').open = false;
   } catch (err) {
-    agent = null; who.dataset.state = 'off';
-    const m = err?.message ?? String(err);
-    // "Failed to fetch" is what a stopped agent, a wrong endpoint and a
-    // refused origin all look like from here; say what to check.
-    who.textContent = `agent: not connected — ${m}${/Failed to fetch/.test(m) ? ' (is the local agent running, and does the Endpoint match what it printed?)' : ''}`;
+    if (mine === readTicket) showUnreachable(err);
     $('settings').open = true;
+  }
+}
+
+// Both lines FOLLOW THE AGENT'S CURRENT VIEW (t-96c4). They used to be built
+// once at Connect, so "page: NOT attached" survived an Attach, and "attached"
+// survived the page closing, each reported as current. This re-reads on every
+// event that can change either line. It does not open or close the settings,
+// and does nothing before a first successful Connect. A failed re-read is shown
+// as a failure: a line that kept its last value when the agent stopped
+// answering would be the same stale claim this card exists to remove.
+async function refreshLines() {
+  if (!agent) return;
+  const mine = ++readTicket;
+  try {
+    const reply = await readAgent();
+    if (mine === readTicket) showAgent(reply);
+  } catch (err) {
+    if (mine === readTicket) showUnreachable(err);
   }
 }
 
@@ -68,7 +112,20 @@ $('connect').addEventListener('click', connect);
 // relay is reached from this panel page over ordinary CORS, as t-70a1 measured
 // for the local agent (counsel, seq 2118: measure before widening).
 let bridge = null; let bridgePort = null;
-function bridgeStatus({ state, text }) { bridgeEl.dataset.state = state; bridgeEl.textContent = text; }
+function bridgeStatus({ state, text }) {
+  bridgeEl.dataset.state = state; bridgeEl.textContent = text;
+  // The agent line's "page:" clause follows the RELAY, so re-read it whenever
+  // this panel's own attachment settles either way (t-96c4). 'ready' is sent
+  // when the stream to the relay opens, which is when the relay registers the
+  // page, so one read is enough. 'absent' is sent as the stream closes, and the
+  // relay may not have seen that yet. The first read then reports what the
+  // agent genuinely believes at that instant, which is what the line claims to
+  // show. A second read, once it has settled, catches the relay catching up.
+  if (state === 'ready' || state === 'absent') {
+    refreshLines();
+    if (state === 'absent') setTimeout(refreshLines, 1500);
+  }
+}
 function dropBridge(reason) {
   if (bridge) bridge.close(reason);
   try { bridgePort?.disconnect(); } catch {}
@@ -147,8 +204,10 @@ $('ask').addEventListener('submit', async (ev) => {
     const res = await r.json();
     if (r.status === 409) { row('error', 'local agent', 'a prompt is already running — one at a time'); return; }
     if (!r.ok) { row('error', 'local agent', res.error ?? `HTTP ${r.status}`); return; }
-    // The "tools the page offers now" line follows the page, not the last Connect.
-    fetch(`${base()}/tools`, { headers: headers() }).then((t) => t.json()).then(({ tools }) => { $('tools').textContent = `tools the page offers now: ${tools.join(', ')}`; }).catch(() => {});
+    // Both lines follow the page, not the last Connect (t-96c4). This used to
+    // refresh only the tools line, and wrote "tools the page offers now: "
+    // with nothing after it when the list came back empty.
+    refreshLines();
     for (const e of res.transcript) {
       if (e.type === 'tool_call') row('tool_call', `${res.agent.model} → ${e.name}`, JSON.stringify(e.args));
       else if (e.type === 'tool_result') row(`tool_result${e.isError ? ' err' : ''}`, `page → ${e.name}${e.isError ? ' (error)' : ''}`, e.text);
