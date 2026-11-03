@@ -126,38 +126,53 @@ function objectContract(executed) {
   };
 }
 
-test('3c. polyfill 6.x takes an object, not a JSON string: the call is retried once as an object and runs exactly once', async () => {
+test('3c. under the polyfill (inputShape object) the call goes as an object, once — never a string first', async () => {
   const w = world({ url: `https://take-five-lw7.pages.dev/?bridge=${RELAY}&token=${TOKEN}`, tools: TOOLS });
-  w.modelContext.executeTool = objectContract(w.executed);
+  const attempts = [];
+  const run = objectContract(w.executed);
+  w.modelContext.executeTool = (tool, input) => { attempts.push(input); return run(tool, input); };
   const room = await seedRoom('Room host');
   const attachBridge = await load();
-  await attachBridge(room);
+  await attachBridge(room, { inputShape: 'object' });
   w.streams[0].onmessage({ data: JSON.stringify({ id: 9, name: 'read_ledger', args: { limit: 3 } }) });
   await new Promise((r) => setTimeout(r, 10));
-  assert.equal(w.executed.length, 1, 'the refused string ran nothing; the object ran once');
-  assert.deepEqual(w.executed[0].input, { limit: 3 });
+  assert.deepEqual(attempts, [{ limit: 3 }], 'one executeTool, with the object');
+  assert.equal(w.executed.length, 1);
   const result = w.fetches.find((f) => f.url === `${RELAY}/result`);
   assert.equal(result.body.ok, true);
   assert.equal(result.body.text, JSON.stringify({ content: [{ type: 'text', text: 'ran read_ledger' }] }));
 });
 
-test('3d. a tool that fails inside is not retried: one call never becomes two acts', async () => {
+test('3d. RED (counsel, PR #7): under native Chrome a tool that does its work and THEN throws a TypeError is called exactly once', async () => {
   const w = world({ url: `https://take-five-lw7.pages.dev/?bridge=${RELAY}&token=${TOKEN}`, tools: TOOLS });
-  // A context that takes EITHER shape, and a tool that fails inside it. Any
-  // retry here would run the tool a second time; only a TypeError may retry.
+  // Native-style: the string reaches the tool, the tool acts, then throws its
+  // own TypeError. Any retry here is a phase tool acting twice.
+  const acts = [];
   w.modelContext.executeTool = async (tool, input) => {
-    w.executed.push({ tool, input });
-    throw Object.assign(new Error('Tool execution failed'), { name: 'UnknownError' });
+    acts.push({ name: tool.name, input });
+    throw new TypeError('the tool failed after it acted');
   };
   const room = await seedRoom('Room host');
   const attachBridge = await load();
-  await attachBridge(room);
+  await attachBridge(room, { inputShape: 'string' });
   w.streams[0].onmessage({ data: JSON.stringify({ id: 10, name: 'commit_to_round', args: { position: 'yes' } }) });
   await new Promise((r) => setTimeout(r, 10));
-  assert.equal(w.executed.length, 1, 'the tool ran once and failed; nothing ran it again');
+  assert.deepEqual(acts, [{ name: 'commit_to_round', input: '{"position":"yes"}' }], 'one call, as the string — nothing ran it again');
   const result = w.fetches.find((f) => f.url === `${RELAY}/result`);
   assert.equal(result.body.ok, false);
-  assert.equal(result.body.error, 'Tool execution failed');
+  assert.equal(result.body.error, 'the tool failed after it acted');
+});
+
+test('3e. the shape is decided from the implementation: native → string, polyfill → object; the extension ack carries it', async () => {
+  const { inputShapeFor } = await import('../src/bridge.js');
+  assert.equal(inputShapeFor(true), 'string');
+  assert.equal(inputShapeFor(false), 'object');
+  const doc = extWorld();
+  const { listenForExtensionBridge } = await loadExt();
+  listenForExtensionBridge(await seedRoom('Room host'), { offered: () => true, inputShape: 'object' });
+  const acked = new Promise((resolve) => doc.addEventListener('take-five:bridge-recorded', (ev) => resolve(ev.detail)));
+  doc.dispatchEvent(new CustomEvent('take-five:bridge-attached', { detail: ATTACH, cancelable: true }));
+  assert.equal((await acked).input, 'object', 'the endpoint executes in this page, so the page names the shape');
 });
 
 test('4. bridge_opened lands after the relay answered and before the stream opens, naming the door by fingerprint', async () => {

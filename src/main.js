@@ -17,7 +17,7 @@ import { installWebMCP } from '@mcp-b/webmcp-polyfill';
 import { seedRoom, PHASES, INGRESS, GRADE_NOTE, QUESTION, offeredNames, surfaceLabel, inputFingerprint } from './room.js';
 import { registerReadSurface, registerPhaseTools, registerPartnerSurface, PARTNER_ORIGIN } from './tools.js';
 import { Round } from './round.js';
-import { attachBridge, listenForExtensionBridge } from './bridge.js';
+import { attachBridge, listenForExtensionBridge, inputShapeFor } from './bridge.js';
 
 // Measured BEFORE the polyfill runs: native WebMCP is the browser's own
 // `document.modelContext`, present at this point; the polyfill installs one
@@ -365,10 +365,14 @@ await syncPhaseTools();
 // exactly what the "tools the agent can see now" panel lists. First cut used the
 // phase list alone and offered the agent ONE tool (found live 08:15 UK).
 const offeredToBridge = (name) => offeredNames(reg.names, phaseTools.names).includes(name);
-await attachBridge(room, { offered: offeredToBridge });
+// The argument shape executeTool takes is decided here, once, from which
+// implementation this page is talking to: a string for native, an object for
+// the polyfill. Never discovered by retrying (see bridge.js).
+const inputShape = inputShapeFor(NATIVE_WEBMCP);
+await attachBridge(room, { offered: offeredToBridge, inputShape });
 // t-4202: the same door, carried by Take Five Agent into any tab. The page
 // fetches nothing; it answers the endpoint's event with the same offered set.
-listenForExtensionBridge(room, { offered: offeredToBridge });
+listenForExtensionBridge(room, { offered: offeredToBridge, inputShape });
 
 // The cross-org line. `exposedTo` needs native WebMCP; the polyfill refuses it.
 // Whichever way it goes, the page SAYS which — a demo that quietly degraded
