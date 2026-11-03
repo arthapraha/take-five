@@ -4,17 +4,20 @@
 // sandbox, is whoever opened the page.
 
 // The polyfill does NOT install itself on import — only its IIFE build has side
-// effects, and the ESM entry exports an explicit initializer. Importing it bare
+// effects, and the ESM entry exports an explicit installer. Importing it bare
 // leaves `document.modelContext` undefined and the read surface silently
 // unregistered, which looks exactly like a browser without WebMCP.
 //
 // It never replaces a real implementation: in a browser that ships WebMCP, the
-// native `document.modelContext` wins and this is a no-op.
-import { initializeWebMCPPolyfill } from '@mcp-b/webmcp-polyfill';
+// native `document.modelContext` wins and this is a no-op. From 6.0 it is the
+// upstream WebMCP core, so it is also a no-op on an insecure page or an engine
+// older than Chrome/Firefox 126 or Safari 18 — `document.modelContext` stays
+// the feature check either way.
+import { installWebMCP } from '@mcp-b/webmcp-polyfill';
 import { seedRoom, PHASES, INGRESS, GRADE_NOTE, QUESTION, offeredNames, surfaceLabel, inputFingerprint } from './room.js';
 import { registerReadSurface, registerPhaseTools, registerPartnerSurface, PARTNER_ORIGIN } from './tools.js';
 import { Round } from './round.js';
-import { attachBridge, listenForExtensionBridge } from './bridge.js';
+import { attachBridge, listenForExtensionBridge, inputShapeFor } from './bridge.js';
 
 // Measured BEFORE the polyfill runs: native WebMCP is the browser's own
 // `document.modelContext`, present at this point; the polyfill installs one
@@ -22,7 +25,7 @@ import { attachBridge, listenForExtensionBridge } from './bridge.js';
 // so "native" is read off the page rather than inferred (t-6b35; the 2 Sept
 // runs had to infer it from string-typed inputSchema).
 const NATIVE_WEBMCP = Boolean(document.modelContext);
-initializeWebMCPPolyfill();
+installWebMCP();
 
 const $ = (id) => document.getElementById(id);
 const short = (h) => `${h.slice(0, 10)}…${h.slice(-6)}`;
@@ -362,10 +365,14 @@ await syncPhaseTools();
 // exactly what the "tools the agent can see now" panel lists. First cut used the
 // phase list alone and offered the agent ONE tool (found live 08:15 UK).
 const offeredToBridge = (name) => offeredNames(reg.names, phaseTools.names).includes(name);
-await attachBridge(room, { offered: offeredToBridge });
+// The argument shape executeTool takes is decided here, once, from which
+// implementation this page is talking to: a string for native, an object for
+// the polyfill. Never discovered by retrying (see bridge.js).
+const inputShape = inputShapeFor(NATIVE_WEBMCP);
+await attachBridge(room, { offered: offeredToBridge, inputShape });
 // t-4202: the same door, carried by Take Five Agent into any tab. The page
 // fetches nothing; it answers the endpoint's event with the same offered set.
-listenForExtensionBridge(room, { offered: offeredToBridge });
+listenForExtensionBridge(room, { offered: offeredToBridge, inputShape });
 
 // The cross-org line. `exposedTo` needs native WebMCP; the polyfill refuses it.
 // Whichever way it goes, the page SAYS which — a demo that quietly degraded

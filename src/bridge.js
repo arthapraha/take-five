@@ -72,6 +72,21 @@ export function schemaObject(s, warn = () => {}) {
   return { type: 'object', properties: {} };
 }
 
+/** The shape `executeTool` takes its arguments in, chosen ONCE from which
+ *  implementation is in place — never by catching. Native Chrome 152 takes a
+ *  JSON STRING; the polyfill from 6.0 (the upstream WebMCP core) takes an
+ *  OBJECT. A retry on failure was tried and refused (counsel, PR #7): under
+ *  native Chrome the string reaches the tool, so a tool that throws partway
+ *  through would run a second time, and a phase tool would act twice. One
+ *  call, one shape, whatever comes back.
+ *
+ *  main.js knows which implementation it is talking to (`NATIVE_WEBMCP`,
+ *  measured before the polyfill installs) and passes the shape to both
+ *  attaches. Absent, it is 'string' — the shape every page before 6.0 took. */
+export const inputShapeFor = (native) => (native ? 'string' : 'object');
+let INPUT_SHAPE = 'string';
+const toolInput = (args) => (INPUT_SHAPE === 'object' ? (args ?? {}) : JSON.stringify(args ?? {}));
+
 let TOKEN = '';
 // This page load's nonce (t-089f). The relay serves one page at a time and
 // refuses anything from another nonce on EVERY route, so a second tab is told
@@ -106,9 +121,9 @@ async function runCall(relay, { id, name, args }) {
     const tool = tools.find((t) => t.name === name);
     if (!tool) throw new Error(`no tool "${name}" in this phase`);
     if (typeof mc.executeTool !== 'function') throw new Error('this browser exposes no executeTool to the page');
-    // Same call shape partner.js uses: the tool object and a JSON string; the
+    // The tool object and its arguments, in the shape this context takes; the
     // result comes back as a string (or null).
-    const result = await mc.executeTool(tool, JSON.stringify(args ?? {}));
+    const result = await mc.executeTool(tool, toolInput(args));
     text = result == null ? '' : String(result);
     ok = true;
   } catch (err) {
@@ -124,12 +139,13 @@ async function runCall(relay, { id, name, args }) {
 // stream (t-3dcc, Hermes seq 1809): refused, loudly, never merged.
 let ATTACHED = null;
 
-export async function attachBridge(room, { offered = null } = {}) {
+export async function attachBridge(room, { offered = null, inputShape = 'string' } = {}) {
   if (ATTACHED) {
     chip(`bridge: already attached to ${ATTACHED} — a second attach is refused`, 'absent');
     return null;
   }
   OFFERED = typeof offered === 'function' ? offered : null;
+  INPUT_SHAPE = inputShape;
   const params = new URL(location.href).searchParams;
   const relay = params.get('bridge');
   if (!relay) return null;
@@ -227,7 +243,7 @@ export async function attachBridge(room, { offered = null } = {}) {
  *
  *  A second attach while one is open is refused (t-3dcc); a door the panel
  *  closed may be opened again, and the chain gets another row for it. */
-export function listenForExtensionBridge(room, { offered = null } = {}) {
+export function listenForExtensionBridge(room, { offered = null, inputShape = 'string' } = {}) {
   const refuse = (reason) => document.dispatchEvent(new CustomEvent('take-five:bridge-refused', { detail: { reason } }));
   document.addEventListener('take-five:bridge-attached', (ev) => {
     const d = ev.detail ?? {};
@@ -260,7 +276,9 @@ export function listenForExtensionBridge(room, { offered = null } = {}) {
         ingress: 'room',
       });
       chip(`bridge: open via Take Five Agent to ${d.relay} — ${tools.length} tools offered`, 'ready');
-      document.dispatchEvent(new CustomEvent('take-five:bridge-recorded', { detail: { offered: isOffered, tools: tools.map((t) => t.name) } }));
+      // The ack names the input shape too: the endpoint executes in this page's
+      // context, and the page is what knows which implementation that is.
+      document.dispatchEvent(new CustomEvent('take-five:bridge-recorded', { detail: { offered: isOffered, tools: tools.map((t) => t.name), input: inputShape } }));
     })().catch((err) => {
       ATTACHED = null; OFFERED = null;
       chip(`bridge: the door could not be recorded — ${err?.message ?? err}`, 'absent');

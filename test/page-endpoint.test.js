@@ -34,7 +34,8 @@ function world({ tools = TOOLS, takeFive = true, now = () => 0 } = {}) {
     documentElement: { dataset: takeFive ? { takeFive: 'room' } : {} },
     modelContext: {
       getTools: async () => { counts.getTools += 1; return tools; },
-      executeTool: async (tool, json) => { executed.push({ name: tool.name, json }); return `ran ${tool.name}`; },
+      // Bound, so it reads as `[native code]`: by default this is native Chrome.
+      executeTool: (async (tool, json) => { executed.push({ name: tool.name, json }); return `ran ${tool.name}`; }).bind(null),
       addEventListener: (type, fn) => { if (type === 'toolchange') toolchange = fn; },
       removeEventListener: () => {},
     },
@@ -84,6 +85,56 @@ test('1. a page that is not Take Five claims nothing: no chain, tools listed as 
   const [result] = ofType(w.posted, 'result');
   assert.deepEqual(shape(result), { source: 'take-five-bridge/page', type: 'result', id: 'c1', ok: true, text: 'ran read_ledger', error: null });
   assert.deepEqual(w.executed, [{ name: 'read_ledger', json: '{"limit":2}' }]);
+});
+
+test('1b. a page that is not Take Five, under a script-defined (polyfill) executeTool: the call goes as an object, once', async () => {
+  const w = world({ takeFive: false });
+  const attempts = [];
+  w.document.modelContext.executeTool = async (tool, input) => {
+    attempts.push(input);
+    if (input === null || typeof input !== 'object') throw new TypeError('inputObject must be an object');
+    return '"ok"';
+  };
+  w.fromExt({ type: 'hello', relay: 'http://127.0.0.1:7340', token_fingerprint: 'a1b2c3d4' });
+  await settle();
+  w.fromExt({ type: 'call', id: 'c2', name: 'read_ledger', args: { limit: 2 } });
+  await settle();
+  const [result] = ofType(w.posted, 'result');
+  assert.deepEqual(shape(result), { source: 'take-five-bridge/page', type: 'result', id: 'c2', ok: true, text: '"ok"', error: null });
+  assert.deepEqual(shape(attempts), [{ limit: 2 }], 'one executeTool, with the object — no string first');
+});
+
+test('1c. RED (counsel, PR #7): under native Chrome a tool that does its work and THEN throws a TypeError is called exactly once', async () => {
+  const w = world({ takeFive: false });
+  w.document.modelContext.executeTool = (async (tool, input) => {
+    w.executed.push({ name: tool.name, input });
+    throw new TypeError('the tool failed after it acted');
+  }).bind(null);
+  w.fromExt({ type: 'hello', relay: 'http://127.0.0.1:7340', token_fingerprint: 'a1b2c3d4' });
+  await settle();
+  w.fromExt({ type: 'call', id: 'c3', name: 'commit_to_round', args: { position: 'yes' } });
+  await settle();
+  const [result] = ofType(w.posted, 'result');
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'the tool failed after it acted');
+  assert.deepEqual(shape(w.executed), [{ name: 'commit_to_round', input: '{"position":"yes"}' }], 'one call, as the string — nothing ran it again');
+});
+
+test('1d. a Take Five page names its shape in the ack: `input: object` is obeyed, and an ack without one (a page from before 6.0) means the string', async () => {
+  for (const [input, expected] of [['object', { limit: 2 }], [undefined, '{"limit":2}']]) {
+    const w = world();
+    const sent = [];
+    w.document.modelContext.executeTool = (async (tool, args) => { sent.push(args); return 'ok'; }).bind(null);
+    w.document.addEventListener('take-five:bridge-attached', (ev) => {
+      ev.preventDefault();
+      setImmediate(() => w.document.dispatchEvent(new FakeEvent('take-five:bridge-recorded', { detail: { offered: OFFERED, tools: [], input } })));
+    });
+    w.fromExt({ type: 'hello', relay: 'http://127.0.0.1:7340', token_fingerprint: 'a1b2c3d4' });
+    await settle();
+    w.fromExt({ type: 'call', id: 'c4', name: 'read_ledger', args: { limit: 2 } });
+    await settle();
+    assert.deepEqual(shape(sent), [expected], `ack input ${input}: the page's word decides, not the context's look`);
+  }
 });
 
 test('2. on a Take Five page nothing is listed and no call is served until the page acks the recorded door; the ack is per-attach and the token never arrives', async () => {

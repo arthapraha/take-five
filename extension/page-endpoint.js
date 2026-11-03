@@ -50,6 +50,22 @@
     return { type: 'object', properties: {} };
   }
 
+  // The shape `executeTool` takes its arguments in, chosen once and never by
+  // retrying: a tool that throws partway through must not run twice (counsel,
+  // PR #7). Chrome 152 takes a JSON string; the polyfill from 6.0 an object.
+  //  - A Take Five page names its shape in the ack (`input`), measured before
+  //    its polyfill installed. An ack without one is a page from before 6.0,
+  //    when every implementation took the string.
+  //  - Any other page cannot be asked, so the context is read: a native
+  //    `executeTool` is `[native code]` (the string); a script-defined one is a
+  //    polyfill, and the current one takes the object. A pre-6.0 polyfill
+  //    refuses an object at its parse, before the tool runs — that call fails,
+  //    once, and nothing runs twice.
+  function nativeShape(mc) {
+    try { return /\{\s*\[native code\]\s*\}\s*$/.test(Function.prototype.toString.call(mc.executeTool)) ? 'string' : 'object'; } catch { return 'string'; }
+  }
+  const toolInput = (shape, args) => (shape === 'object' ? (args || {}) : JSON.stringify(args || {}));
+
   function createPageEndpoint({ document, window, CustomEvent, log = () => {}, schedule = (fn, ms) => setTimeout(fn, ms), now = () => Date.now() }) {
     const mc = document.modelContext;
     const post = (msg) => window.postMessage(Object.assign({ source: PAGE_SOURCE }, msg), '*');
@@ -58,6 +74,7 @@
     let state = 'idle';
     let offered = null;
     const isOffered = (name) => !offered || offered(name);
+    let inputShape = 'string';
 
     async function currentTools() {
       if (!mc || typeof mc.getTools !== 'function') return [];
@@ -86,6 +103,7 @@
       // A Take Five page always scopes. An ack with no offered set is a page
       // this script does not understand; fail closed, never open.
       if (!offered) { refuse('the page recorded the door but named no offered set; nothing is served'); return; }
+      inputShape = d.input === 'object' ? 'object' : 'string';
       state = 'recorded';
       announce().catch(() => {});
     }
@@ -112,7 +130,7 @@
         if (ev.defaultPrevented) return; // the page has the door; wait for -recorded
         if (state !== 'claimed') return; // refused during the dispatch
         state = 'idle';
-        if (!marker) { state = 'plain'; announce().catch(() => {}); return; }
+        if (!marker) { inputShape = nativeShape(mc); state = 'plain'; announce().catch(() => {}); return; }
         if (now() - started >= CLAIM_WAIT_MS) { refuse('a Take Five page that did not claim the door — reload it and attach again'); return; }
         schedule(tryClaim, CLAIM_RETRY_MS);
       };
@@ -129,7 +147,7 @@
         const tools = await mc.getTools();
         const tool = tools.find((t) => t.name === name);
         if (!tool) throw new Error(`no tool "${name}" in this phase`);
-        const result = await mc.executeTool(tool, JSON.stringify(args || {}));
+        const result = await mc.executeTool(tool, toolInput(inputShape, args));
         text = result == null ? '' : String(result);
         ok = true;
       } catch (err) {

@@ -2,7 +2,8 @@
 //
 // `requestUserInteraction()` is discussed in the WebMCP draft and named in our
 // own dispatch — and it does not exist in the pinned packages. Zero occurrences
-// in `webmcp-types@0.1.5`, zero in `@mcp-b/webmcp-polyfill@5.0.1`. That is the
+// in `webmcp-types@0.1.5`, zero in `@mcp-b/webmcp-polyfill@5.0.1` (and still
+// zero in 6.0.3 and the `webmcp-types@0.1.9` it pins). That is the
 // third feature in this build that is present in the spec conversation and
 // absent at runtime (`exposedTo` and cross-document exposure being the others).
 //
