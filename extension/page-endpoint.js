@@ -50,6 +50,18 @@
     return { type: 'object', properties: {} };
   }
 
+  // Chrome 152 takes the arguments as a JSON string; the polyfill from 6.0
+  // takes an object and rejects a string with a TypeError before any tool runs.
+  // Same order and same single retry as src/bridge.js's executeWithArgs.
+  async function executeWithArgs(mc, tool, args) {
+    try {
+      return await mc.executeTool(tool, JSON.stringify(args || {}));
+    } catch (err) {
+      if (!err || err.name !== 'TypeError') throw err;
+      return await mc.executeTool(tool, args || {});
+    }
+  }
+
   function createPageEndpoint({ document, window, CustomEvent, log = () => {}, schedule = (fn, ms) => setTimeout(fn, ms), now = () => Date.now() }) {
     const mc = document.modelContext;
     const post = (msg) => window.postMessage(Object.assign({ source: PAGE_SOURCE }, msg), '*');
@@ -129,7 +141,7 @@
         const tools = await mc.getTools();
         const tool = tools.find((t) => t.name === name);
         if (!tool) throw new Error(`no tool "${name}" in this phase`);
-        const result = await mc.executeTool(tool, JSON.stringify(args || {}));
+        const result = await executeWithArgs(mc, tool, args);
         text = result == null ? '' : String(result);
         ok = true;
       } catch (err) {

@@ -4,13 +4,16 @@
 // sandbox, is whoever opened the page.
 
 // The polyfill does NOT install itself on import — only its IIFE build has side
-// effects, and the ESM entry exports an explicit initializer. Importing it bare
+// effects, and the ESM entry exports an explicit installer. Importing it bare
 // leaves `document.modelContext` undefined and the read surface silently
 // unregistered, which looks exactly like a browser without WebMCP.
 //
 // It never replaces a real implementation: in a browser that ships WebMCP, the
-// native `document.modelContext` wins and this is a no-op.
-import { initializeWebMCPPolyfill } from '@mcp-b/webmcp-polyfill';
+// native `document.modelContext` wins and this is a no-op. From 6.0 it is the
+// upstream WebMCP core, so it is also a no-op on an insecure page or an engine
+// older than Chrome/Firefox 126 or Safari 18 — `document.modelContext` stays
+// the feature check either way.
+import { installWebMCP } from '@mcp-b/webmcp-polyfill';
 import { seedRoom, PHASES, INGRESS, GRADE_NOTE, QUESTION, offeredNames, surfaceLabel, inputFingerprint } from './room.js';
 import { registerReadSurface, registerPhaseTools, registerPartnerSurface, PARTNER_ORIGIN } from './tools.js';
 import { Round } from './round.js';
@@ -22,7 +25,7 @@ import { attachBridge, listenForExtensionBridge } from './bridge.js';
 // so "native" is read off the page rather than inferred (t-6b35; the 2 Sept
 // runs had to infer it from string-typed inputSchema).
 const NATIVE_WEBMCP = Boolean(document.modelContext);
-initializeWebMCPPolyfill();
+installWebMCP();
 
 const $ = (id) => document.getElementById(id);
 const short = (h) => `${h.slice(0, 10)}…${h.slice(-6)}`;

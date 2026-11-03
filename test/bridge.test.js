@@ -115,6 +115,51 @@ test('3b. a call for a tool the phase does not offer is refused on the page, not
   assert.match(result.body.error, /no tool "reveal_in_round"/);
 });
 
+/** `executeTool` as the polyfill from 6.0 serves it (its upstream WebMCP core):
+ *  the input must be an OBJECT — a string is a TypeError at the argument check,
+ *  before anything runs — and every failure inside a tool is an UnknownError. */
+function objectContract(executed) {
+  return async (tool, input) => {
+    if (input === null || typeof input !== 'object') throw new TypeError('inputObject must be an object');
+    executed.push({ tool, input });
+    return JSON.stringify({ content: [{ type: 'text', text: `ran ${tool.name}` }] });
+  };
+}
+
+test('3c. polyfill 6.x takes an object, not a JSON string: the call is retried once as an object and runs exactly once', async () => {
+  const w = world({ url: `https://take-five-lw7.pages.dev/?bridge=${RELAY}&token=${TOKEN}`, tools: TOOLS });
+  w.modelContext.executeTool = objectContract(w.executed);
+  const room = await seedRoom('Room host');
+  const attachBridge = await load();
+  await attachBridge(room);
+  w.streams[0].onmessage({ data: JSON.stringify({ id: 9, name: 'read_ledger', args: { limit: 3 } }) });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(w.executed.length, 1, 'the refused string ran nothing; the object ran once');
+  assert.deepEqual(w.executed[0].input, { limit: 3 });
+  const result = w.fetches.find((f) => f.url === `${RELAY}/result`);
+  assert.equal(result.body.ok, true);
+  assert.equal(result.body.text, JSON.stringify({ content: [{ type: 'text', text: 'ran read_ledger' }] }));
+});
+
+test('3d. a tool that fails inside is not retried: one call never becomes two acts', async () => {
+  const w = world({ url: `https://take-five-lw7.pages.dev/?bridge=${RELAY}&token=${TOKEN}`, tools: TOOLS });
+  // A context that takes EITHER shape, and a tool that fails inside it. Any
+  // retry here would run the tool a second time; only a TypeError may retry.
+  w.modelContext.executeTool = async (tool, input) => {
+    w.executed.push({ tool, input });
+    throw Object.assign(new Error('Tool execution failed'), { name: 'UnknownError' });
+  };
+  const room = await seedRoom('Room host');
+  const attachBridge = await load();
+  await attachBridge(room);
+  w.streams[0].onmessage({ data: JSON.stringify({ id: 10, name: 'commit_to_round', args: { position: 'yes' } }) });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(w.executed.length, 1, 'the tool ran once and failed; nothing ran it again');
+  const result = w.fetches.find((f) => f.url === `${RELAY}/result`);
+  assert.equal(result.body.ok, false);
+  assert.equal(result.body.error, 'Tool execution failed');
+});
+
 test('4. bridge_opened lands after the relay answered and before the stream opens, naming the door by fingerprint', async () => {
   const w = world({ url: `https://take-five-lw7.pages.dev/?bridge=${RELAY}&token=${TOKEN}`, tools: TOOLS });
   const room = await seedRoom('Room host');

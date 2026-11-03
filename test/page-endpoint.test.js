@@ -86,6 +86,24 @@ test('1. a page that is not Take Five claims nothing: no chain, tools listed as 
   assert.deepEqual(w.executed, [{ name: 'read_ledger', json: '{"limit":2}' }]);
 });
 
+test('1b. polyfill 6.x takes an object, not a JSON string: the call is retried once as an object, across realms, and runs once', async () => {
+  const w = world({ takeFive: false });
+  // The 6.x contract: a string input is a TypeError before anything runs. This
+  // TypeError is the test's realm, not the script's — as a page's would be.
+  w.document.modelContext.executeTool = async (tool, input) => {
+    if (input === null || typeof input !== 'object') throw new TypeError('inputObject must be an object');
+    w.executed.push({ name: tool.name, input });
+    return '"ok"';
+  };
+  w.fromExt({ type: 'hello', relay: 'http://127.0.0.1:7340', token_fingerprint: 'a1b2c3d4' });
+  await settle();
+  w.fromExt({ type: 'call', id: 'c2', name: 'read_ledger', args: { limit: 2 } });
+  await settle();
+  const [result] = ofType(w.posted, 'result');
+  assert.deepEqual(shape(result), { source: 'take-five-bridge/page', type: 'result', id: 'c2', ok: true, text: '"ok"', error: null });
+  assert.deepEqual(shape(w.executed), [{ name: 'read_ledger', input: { limit: 2 } }]);
+});
+
 test('2. on a Take Five page nothing is listed and no call is served until the page acks the recorded door; the ack is per-attach and the token never arrives', async () => {
   const w = world();
   let acked = false;

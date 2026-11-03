@@ -72,6 +72,24 @@ export function schemaObject(s, warn = () => {}) {
   return { type: 'object', properties: {} };
 }
 
+/** Run one tool through `executeTool`, in whichever input shape the context
+ *  takes. Native Chrome 152 takes the arguments as a JSON STRING; the current
+ *  WebMCP draft, and the polyfill from 6.0 (its upstream core), take an OBJECT
+ *  and reject a string with a TypeError at the argument check, before any tool
+ *  runs. So the string goes first — the shape the native runs were measured on
+ *  — and only a TypeError retries with the object. Nothing else is retried: a
+ *  tool that failed inside must not run twice, and under 6.x every in-tool
+ *  failure is an `UnknownError`. Matched by name, not `instanceof`, because a
+ *  TypeError from another realm is still one. */
+export async function executeWithArgs(mc, tool, args) {
+  try {
+    return await mc.executeTool(tool, JSON.stringify(args ?? {}));
+  } catch (err) {
+    if (err?.name !== 'TypeError') throw err;
+    return await mc.executeTool(tool, args ?? {});
+  }
+}
+
 let TOKEN = '';
 // This page load's nonce (t-089f). The relay serves one page at a time and
 // refuses anything from another nonce on EVERY route, so a second tab is told
@@ -106,9 +124,9 @@ async function runCall(relay, { id, name, args }) {
     const tool = tools.find((t) => t.name === name);
     if (!tool) throw new Error(`no tool "${name}" in this phase`);
     if (typeof mc.executeTool !== 'function') throw new Error('this browser exposes no executeTool to the page');
-    // Same call shape partner.js uses: the tool object and a JSON string; the
+    // The tool object and its arguments, in the shape this context takes; the
     // result comes back as a string (or null).
-    const result = await mc.executeTool(tool, JSON.stringify(args ?? {}));
+    const result = await executeWithArgs(mc, tool, args);
     text = result == null ? '' : String(result);
     ok = true;
   } catch (err) {
